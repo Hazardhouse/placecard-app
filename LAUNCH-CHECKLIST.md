@@ -45,9 +45,20 @@ order to do things in.
       - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
         `TWILIO_PHONE_NUMBER`, `TWILIO_WHATSAPP_NUMBER` — see §4
       - 4over print fulfillment creds
-- [ ] **CORS** — `backend/app/main.py` middleware needs to allow the
-      production frontend origin (`https://app.placecard-events.app`),
-      not just `localhost:5180`.
+- [x] **CORS** — driven by `ALLOWED_ORIGINS` env var. Set to the
+      production frontend domain(s) at deploy time. *(Done 2026-05-11.)*
+- [ ] **Run `SOP-SECURITY-RUNBOOK.md` §1 — Secret Hardening — before
+      first production deploy.** Rotates every secret currently in
+      local `.env` files (Supabase service key, JWT secret, Gemini,
+      etc.) plus sets spend caps, scope restrictions, 2FA. **Required
+      pre-deploy**.
+- [ ] **Run `SOP-SECURITY-RUNBOOK.md` §2 — User Data Protection Audit
+      — before any non-operator account is granted access.** Verifies
+      JWT middleware, RLS, rate limiting, GDPR endpoints in place.
+- [ ] **Run `SOP-SECURITY-RUNBOOK.md` §3 — Final Pass — before
+      marketing site flips off the waitlist.** Backups verified,
+      monitoring active, incident response documented, git history
+      scanned for accidental secret commits.
 - [ ] **Pin Python version**. Local dev currently runs Python 3.9
       from CommandLineTools. We've already been bitten twice by 3.9
       quirks (PEP 604 `int | None` syntax, pdfplumber not installed).

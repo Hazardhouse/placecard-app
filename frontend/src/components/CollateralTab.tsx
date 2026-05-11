@@ -25,30 +25,7 @@ interface Props {
   onSelectedDesignByTypeChange?: React.Dispatch<React.SetStateAction<SelectedDesignByType>>;
 }
 
-interface CollateralItem {
-  id: string;
-  title: string;
-  description: string;
-}
-
-const PRINT_ITEMS: CollateralItem[] = [
-  { id: "name-cards", title: "Name Cards", description: "Generate printable place cards for each guest at their assigned seat." },
-  { id: "programs", title: "Programs", description: "Create a printed order of events, schedules and session details." },
-  { id: "maps", title: "Maps", description: "Floor plans, venue layouts and directions for your guests." },
-];
-
-const DIGITAL_ITEMS: CollateralItem[] = [
-  { id: "photos-video", title: "Photos + Video", description: "Collect and share photos and videos from your event." },
-];
-
 type DesignCategory = "corporate" | "retreat" | "wedding" | "social";
-
-const CATEGORY_LABELS: Record<DesignCategory, string> = {
-  corporate: "Corporate",
-  retreat: "Retreat & Outdoor",
-  wedding: "Wedding & Formal",
-  social: "Social & Casual",
-};
 
 // Map event category or venue type to design category
 function detectCategory(eventCategory: string | null | undefined, venueType?: string | null): DesignCategory {
@@ -122,80 +99,6 @@ const CARD_DESIGNS: Record<DesignCategory, { name: string; font: string; bg: str
   ],
 };
 
-function NameCardIcon() {
-  return (
-    <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="4" y="9" width="30" height="21" rx="2.5" stroke="#1e293b" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
-      <circle cx="13" cy="17" r="3.5" stroke="#1e293b" strokeWidth="1.7"/>
-      <path d="M7 27 C7.5 23 18.5 23 19 27" stroke="#1e293b" strokeWidth="1.7" strokeLinecap="round"/>
-      <line x1="22" y1="15" x2="32" y2="15" stroke="#1e293b" strokeWidth="1.6" strokeLinecap="round"/>
-      <line x1="22" y1="20" x2="29" y2="20" stroke="#1e293b" strokeWidth="1.6" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function ProgramsIcon() {
-  return (
-    <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M5 7 L19 7 L19 32 L5 30 Z" stroke="#1e293b" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M33 7 L19 7 L19 32 L33 30 Z" stroke="#1e293b" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
-      <line x1="8" y1="13" x2="16" y2="13" stroke="#1e293b" strokeWidth="1.4" strokeLinecap="round"/>
-      <line x1="8" y1="18" x2="16" y2="18" stroke="#1e293b" strokeWidth="1.4" strokeLinecap="round"/>
-      <line x1="8" y1="23" x2="14" y2="23" stroke="#1e293b" strokeWidth="1.4" strokeLinecap="round"/>
-      <line x1="22" y1="13" x2="30" y2="13" stroke="#1e293b" strokeWidth="1.4" strokeLinecap="round"/>
-      <line x1="22" y1="18" x2="30" y2="18" stroke="#1e293b" strokeWidth="1.4" strokeLinecap="round"/>
-      <line x1="22" y1="23" x2="28" y2="23" stroke="#1e293b" strokeWidth="1.4" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function MapsIcon() {
-  return (
-    <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4 9 L14 12 L24 9 L34 12 L34 30 L24 27 L14 30 L4 27 Z" stroke="#1e293b" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
-      <line x1="14" y1="12" x2="14" y2="30" stroke="#1e293b" strokeWidth="1.4" strokeLinecap="round"/>
-      <line x1="24" y1="9" x2="24" y2="27" stroke="#1e293b" strokeWidth="1.4" strokeLinecap="round"/>
-      <path d="M19 13 C16.8 13 15 14.8 15 17.2 C15 20.2 19 25 19 25 C19 25 23 20.2 23 17.2 C23 14.8 21.2 13 19 13 Z" stroke="#1e293b" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
-      <circle cx="19" cy="17" r="1.6" stroke="#1e293b" strokeWidth="1.4"/>
-    </svg>
-  );
-}
-
-function PhotosVideoIcon() {
-  return (
-    <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="3" y="13" width="26" height="18" rx="3" stroke="#1e293b" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M12 13 L14 9 L20 9 L22 13" stroke="#1e293b" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
-      <circle cx="16" cy="22" r="5" stroke="#1e293b" strokeWidth="1.8"/>
-      <circle cx="16" cy="22" r="2.2" stroke="#1e293b" strokeWidth="1.4"/>
-      <path d="M30 19 L35 16 L35 28 L30 25" stroke="#1e293b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-const ICON_COMPONENTS: Record<string, () => JSX.Element> = {
-  "name-cards": NameCardIcon,
-  "programs": ProgramsIcon,
-  "maps": MapsIcon,
-  "photos-video": PhotosVideoIcon,
-};
-
-function CollateralCard({ item, onClick }: { item: CollateralItem; onClick?: () => void }) {
-  const IconComponent = ICON_COMPONENTS[item.id];
-  return (
-    <button className="collateral-card" onClick={onClick}>
-      <div className="collateral-card-icon-wrap">
-        <div className="collateral-card-blob" />
-        {IconComponent && <IconComponent />}
-      </div>
-      <div className="collateral-card-body">
-        <div className="collateral-card-title">{item.title}</div>
-        <div className="collateral-card-desc">{item.description}</div>
-      </div>
-      <div className="collateral-card-arrow">→</div>
-    </button>
-  );
-}
 
 interface GuestMeal {
   venue: string;
@@ -238,95 +141,7 @@ function firstMealOrNull(responses: unknown): GuestMeal | null {
   return null;
 }
 
-const VIEW_LABELS = ["Front", "Back", "Inside"] as const;
 
-function NameCardDesign({ design, guest, index, onOrder, totalPrice, attendeeCount, priceLoading }: {
-  design: typeof CARD_DESIGNS["corporate"][0];
-  guest: GuestCardData;
-  index: number;
-  onOrder?: () => void;
-  totalPrice?: number | null;
-  attendeeCount?: number;
-  priceLoading?: boolean;
-}) {
-  const [view, setView] = useState(0); // 0=front, 1=back, 2=inside
-
-  const prev = () => setView(v => (v + 2) % 3);
-  const next = () => setView(v => (v + 1) % 3);
-
-  return (
-    <div className="nc-design-wrapper">
-      <div className="nc-design-header">
-        <div className="nc-design-label">{design.name}</div>
-      </div>
-      <div className="nc-card-carousel">
-        <button className="nc-arrow nc-arrow-left" onClick={prev} aria-label="Previous view">&#8249;</button>
-        <button className="nc-arrow nc-arrow-right" onClick={next} aria-label="Next view">&#8250;</button>
-
-        {/* Front */}
-        {view === 0 && (
-          <div
-            className="nc-card nc-front"
-            style={{
-              fontFamily: design.font,
-              background: design.bg,
-              color: design.color,
-            }}
-          >
-            <div className="nc-fold-line" style={{ borderColor: design.accent + "30" }} />
-            <div className="nc-front-content">
-              <div className="nc-guest-name" style={{ color: design.color }}>{guest.name}</div>
-              <div className="nc-table-name" style={{ color: design.accent }}>{guest.tableName}</div>
-            </div>
-          </div>
-        )}
-
-        {/* Back */}
-        {view === 1 && (
-          <div
-            className="nc-card nc-back"
-            style={{
-              fontFamily: design.font,
-              background: design.bg,
-              color: design.color,
-            }}
-          >
-            <div className="nc-back-content">
-              <div className="nc-back-label" style={{ color: design.accent }}>Dietary</div>
-              <div className="nc-back-dietary">{guest.dietary || "No restrictions"}</div>
-              <div className="nc-back-seat" style={{ color: design.accent }}>{guest.tableName}</div>
-            </div>
-          </div>
-        )}
-
-        {/* Inside */}
-        {view === 2 && (
-          <div
-            className="nc-card nc-inside"
-            style={{
-              fontFamily: design.font,
-              background: design.bg,
-              color: design.color,
-            }}
-          >
-            <div className="nc-inside-content">
-              <div className="nc-inside-welcome" style={{ color: design.accent }}>Welcome</div>
-              <div className="nc-inside-name" style={{ color: design.color }}>{guest.name}</div>
-              <div className="nc-inside-table" style={{ color: design.accent }}>{guest.tableName}</div>
-            </div>
-          </div>
-        )}
-
-        <div className="nc-view-label">{VIEW_LABELS[view]}</div>
-        <div className="nc-view-dots">
-          {VIEW_LABELS.map((_, i) => (
-            <span key={i} className={`nc-dot ${view === i ? "active" : ""}`} onClick={() => setView(i)} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // Map (contentType, view label) → CSS aspect-ratio value that matches the
 // real print dimensions. Used as a display clamp so every rendered preview
@@ -797,7 +612,7 @@ export default function CollateralTab({ scheduleItems, arrangements, tables, att
   const [selectedArrangementId, setSelectedArrangementId] = useState<number>(
     arrangements.length > 0 ? arrangements[0].id : 0
   );
-  const [selectedCategory, setSelectedCategory] = useState<DesignCategory>(detectCategory(eventCategory, eventVenueType));
+  const [selectedCategory] = useState<DesignCategory>(detectCategory(eventCategory, eventVenueType));
   const [orderDesign, setOrderDesign] = useState<typeof CARD_DESIGNS["corporate"][0] | null>(null);
 
   // Canva-style redesign state
@@ -1443,22 +1258,6 @@ export default function CollateralTab({ scheduleItems, arrangements, tables, att
         const perEventTier = getPrintTier(perEventTotal);
         const total = printSetMode === "per-event" ? perEventTotal : reusableTotal;
         const selectedTier = printSetMode === "per-event" ? perEventTier : reusableTier;
-        // Helper to render the price tag for an option — handles the
-        // "no tier available" case (qty > 75) gracefully.
-        const tierPriceLabel = (qty: number, tier: typeof PRINT_TIERS[number] | null) => {
-          if (!tier) return "Get a quote";
-          // If actual qty is below the tier's upTo cap, surface that the
-          // customer is paying the minimum.
-          const isMinimum = qty < tier.upTo - (PRINT_TIERS[PRINT_TIERS.indexOf(tier) - 1]?.upTo ?? 0);
-          // Simpler: just say "min N" when qty is below the bracket size.
-          const showMinNote = qty < tier.upTo && qty > 0;
-          return showMinNote
-            ? `${formatPrice(tier.retail)} · min ${tier.upTo}`
-            : formatPrice(tier.retail);
-        };
-        // Silence the unused isMinimum we computed above — kept just for
-        // intent clarity in case we want a different copy later.
-        void tierPriceLabel; void getPrintTier;
         return (
           <div className="pc-print-popup-layer" role="dialog" aria-modal="true">
             <div className="pc-print-popup-backdrop" onClick={() => setPrintPopupOpen(false)} />

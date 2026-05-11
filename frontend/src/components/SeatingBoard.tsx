@@ -15,7 +15,7 @@ interface Props {
   selectedTableId: number | null;
   onSelectTable: (id: number | null) => void;
   drawMode?: boolean;
-  drawShape?: "round" | "rectangular" | "oval";
+  drawShape?: "round" | "rectangular" | "oval" | "chair-row";
   onDrawTable?: (name: string, shape: Table["shape"], width: number, height: number, capacity: number, x: number, y: number) => void;
   onCancelDraw?: () => void;
   onDeleteTable?: (tableId: number) => void;
@@ -64,17 +64,6 @@ function rectSeatLayout(capacity: number, width: number, height: number): { top:
   }
 
   return { top, bottom, left, right };
-}
-
-/** Compute table dimensions from capacity so seats are evenly spaced (fallback for new tables) */
-function tableDimsFromCapacity(capacity: number): { width: number; height: number } {
-  // Estimate a reasonable rectangle: wider than tall
-  const hSeats = Math.max(1, Math.ceil(capacity / 4));
-  const vSeats = Math.max(1, Math.floor((capacity - 2 * hSeats) / 2));
-  return {
-    width: Math.max(80, hSeats * SEAT_SPACING),
-    height: Math.max(60, Math.max(vSeats, 1) * SEAT_SPACING),
-  };
 }
 
 const CHAIR_SPACING = 56; // spacing for chair rows
@@ -193,7 +182,7 @@ export default function SeatingBoard({
   onTableResize, selectedTableId, onSelectTable,
   drawMode = false, drawShape = "rectangular",
   onDrawTable, onCancelDraw, onDeleteTable, onRenameTable, onRotateTable,
-  autoSeatRef, maximizeConversation, onMaximizeConversationChange,
+  autoSeatRef, maximizeConversation,
 }: Props) {
   const stageRef = useRef<Konva.Stage>(null);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -207,7 +196,7 @@ export default function SeatingBoard({
   const [hoveredTable, setHoveredTable] = useState<number | null>(null);
   const [lockedTables, setLockedTables] = useState<Set<number>>(new Set());
   const [zoom, setZoom] = useState(1);
-  const [maximizeContactLocal, setMaximizeContactLocal] = useState(false);
+  const [maximizeContactLocal] = useState(false);
   const maximizeContact = maximizeConversation ?? maximizeContactLocal;
   const [sidebarPos, setSidebarPos] = useState<{ x: number; y: number } | null>(null);
   const sidebarDragRef = useRef<{ origX: number; origY: number; startX: number; startY: number } | null>(null);
@@ -422,7 +411,7 @@ export default function SeatingBoard({
   const handleBoardMouseUp = () => {};
 
   // Draw mode handlers
-  const handleStageMouseDown = (e: KonvaEventObject<MouseEvent>) => {
+  const handleStageMouseDown = () => {
     if (!drawMode) return;
     const pos = stageRef.current!.getPointerPosition()!;
     setDrawing(true);
@@ -430,7 +419,7 @@ export default function SeatingBoard({
     setDrawCurrent(pos);
   };
 
-  const handleStageMouseMove = (e: KonvaEventObject<MouseEvent>) => {
+  const handleStageMouseMove = () => {
     if (!drawMode || !drawing) return;
     const pos = stageRef.current!.getPointerPosition()!;
     setDrawCurrent(pos);

@@ -58,7 +58,8 @@ export default function EventDetail() {
   const [eventForm, setEventForm] = useState<CustomForm | null>(null);
   const [maximizeConversation, setMaximizeConversation] = useState(false);
   const [autoSeating, setAutoSeating] = useState(false);
-  const autoSeatRef = useRef<(() => void) | null>(null);
+  // autoSeatRef removed — previously exposed for parent-triggered
+  // auto-seating; SeatingBoard now handles its own auto-seat button.
   const initedRef = useRef(false);
 
   // ── Brand state (persists across tab switches) ──
@@ -344,13 +345,8 @@ export default function EventDetail() {
     );
   };
 
-  const handleCreateArrangement = async () => {
-    const name = prompt("Arrangement name (e.g. Reception, Rehearsal Dinner):");
-    if (!name) return;
-    const arr = await api.createArrangement(id, { name });
-    setArrangements((prev) => [...prev, arr]);
-    setActiveArrangement(arr.id);
-  };
+  // (handleCreateArrangement removed — arrangements are now created
+  // automatically when a schedule item is marked `requires_seating`.)
 
   // Sync arrangement names when schedule items are renamed/added/removed
   const handleScheduleItemsChange = async (newItems: ScheduleItem[]) => {

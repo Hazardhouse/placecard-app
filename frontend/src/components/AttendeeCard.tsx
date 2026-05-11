@@ -64,7 +64,7 @@ function avatarColor(dietary: string | null) {
   return "#1b4fff";
 }
 
-export default function AttendeeCard({ attendee, onEdit, onDelete, seated }: Props) {
+export default function AttendeeCard({ attendee, onEdit, onDelete }: Props) {
   const navigate = useNavigate();
   const status = STATUS_CONFIG[attendee.rsvp_status] || STATUS_CONFIG.pending;
   const dietBadges = getDietaryBadges(attendee.dietary_requirements);

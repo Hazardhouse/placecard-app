@@ -18,12 +18,6 @@ const EVENT_TYPE_ICONS: Record<string, string> = {
   Walk: "🚶", Hike: "🥾", Cycle: "🚴", Climbing: "🧗", Tour: "🗺", Photoshoot: "📸",
 };
 
-const VENUE_TYPES = [
-  "Restaurant", "Pub", "Bar", "Hotel", "Ballroom", "Park",
-  "Museum", "Gallery", "Conference Centre", "Private Club",
-  "Rooftop", "Vineyard", "Beach", "Garden", "Farm", "Other",
-];
-
 const VENUE_TYPE_ICONS: Record<string, string> = {
   Restaurant: "🍽", Pub: "🍺", Bar: "🍸", Hotel: "🏨", Ballroom: "✨",
   Park: "🌳", Museum: "🏛", Gallery: "🖼", "Conference Centre": "🏢",
@@ -43,19 +37,6 @@ function formatTime(dt: string | null) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function formatDate(dt: string | null) {
-  if (!dt) return null;
-  return new Date(dt).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
-}
-
-function formatDatetimeLocal(dt: string | null): string {
-  if (!dt) return "";
-  // Convert ISO to datetime-local format (YYYY-MM-DDTHH:MM)
-  const d = new Date(dt);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 // Group items by date
 function groupByDate(items: ScheduleItem[]): { date: string | null; items: ScheduleItem[] }[] {
   const groups: Record<string, ScheduleItem[]> = {};
@@ -66,7 +47,8 @@ function groupByDate(items: ScheduleItem[]): { date: string | null; items: Sched
     if (!groups[dateKey]) groups[dateKey] = [];
     groups[dateKey].push(item);
   }
-  const result = Object.entries(groups).map(([date, items]) => ({ date, items }));
+  const result: { date: string | null; items: ScheduleItem[] }[] =
+    Object.entries(groups).map(([date, items]) => ({ date, items }));
   if (noDate.length) result.push({ date: null, items: noDate });
   return result;
 }
@@ -357,14 +339,19 @@ export default function ScheduleTab({ eventId, items, onItemsChange }: Props) {
   type VenueResult = { place_id: string; name: string; address: string; rating?: number };
   const [locationSuggestions, setLocationSuggestions] = useState<Prediction[]>([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
-  const [nearbyVenues, setNearbyVenues] = useState<VenueResult[]>([]);
+  // setNearbyVenues populates a server-side list of venues near the
+  // selected location. Currently only the setter is read elsewhere in
+  // the file; the list is not displayed independently (the user-facing
+  // dropdown uses `filteredVenues` from a fresh search). Keep the
+  // setter for the location → nearby fetch flow.
+  const [, setNearbyVenues] = useState<VenueResult[]>([]);
   const [filteredVenues, setFilteredVenues] = useState<VenueResult[]>([]);
   const [showVenueSuggestions, setShowVenueSuggestions] = useState(false);
   const [venueName, setVenueName] = useState("");
-  const locationTimer = useRef<ReturnType<typeof setTimeout>>();
+  const locationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onLocationInput = useCallback((value: string) => {
-    clearTimeout(locationTimer.current);
+    if (locationTimer.current) clearTimeout(locationTimer.current);
     if (value.length < 3) {
       setLocationSuggestions([]);
       setShowLocationSuggestions(false);
@@ -392,17 +379,8 @@ export default function ScheduleTab({ eventId, items, onItemsChange }: Props) {
     }).catch(() => {});
   }, []);
 
-  const filterVenues = useCallback((query: string) => {
-    if (!query) {
-      setFilteredVenues(nearbyVenues);
-      setShowVenueSuggestions(nearbyVenues.length > 0);
-      return;
-    }
-    const q = query.toLowerCase();
-    const filtered = nearbyVenues.filter(v => v.name.toLowerCase().includes(q));
-    setFilteredVenues(filtered);
-    setShowVenueSuggestions(filtered.length > 0);
-  }, [nearbyVenues]);
+  // (`filterVenues` was the old client-side filter against `nearbyVenues`;
+  // replaced by `onVenueInput` which does a server-side Places search.)
 
   const selectVenue = useCallback((venue: VenueResult) => {
     setVenueName(venue.name);

@@ -69,7 +69,7 @@ export default function AccountPage() {
   const [invitePhone, setInvitePhone] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("Viewer");
 
-  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [, setInviteError] = useState<string | null>(null);
 
   // Edit user state
   const [editingUser, setEditingUser] = useState<User | null>(null);

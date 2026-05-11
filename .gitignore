@@ -18,23 +18,24 @@ website/
 **/.env.bak
 
 # ── Python ─────────────────────────────────────────────────────────────────
+# Anchored to repo root with `/` so these don't accidentally match
+# subdirectories inside frontend/src (e.g. frontend/src/lib/).
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+/build/
+/develop-eggs/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
 *.egg-info/
 .installed.cfg
 *.egg

@@ -1,0 +1,22 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+sqlalchemy==2.0.35
+alembic==1.13.2
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+google-api-python-client==2.149.0
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
+httpx==0.27.2
+aiosqlite==0.20.0
+apscheduler==3.10.4
+Pillow==11.3.0
+pdfplumber==0.11.4
+python-multipart==0.0.12
+# Postgres driver (production). Local dev still uses SQLite per
+# database_url default. psycopg[binary] avoids the libpq compile step
+# on Render's build image — significantly faster cold-build times.
+psycopg[binary]==3.2.3
+# JWT verification for the Supabase auth middleware (added in Phase 4)
+PyJWT==2.9.0

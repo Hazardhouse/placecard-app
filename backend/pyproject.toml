@@ -1,0 +1,14 @@
+[project]
+name = "placecard-backend"
+version = "0.1.0"
+description = "PlaceCard FastAPI backend"
+requires-python = ">=3.11,<3.13"
+readme = "README.md"
+
+# Dependencies are pinned in requirements.txt for the deploy pipeline
+# (Render runs `pip install -r requirements.txt`). pyproject.toml here is
+# primarily for the Python version pin + tooling configuration.
+
+[tool.alembic]
+script_location = "alembic"
+sqlalchemy_url = "%(DATABASE_URL)s"

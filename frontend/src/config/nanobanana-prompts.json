@@ -1,0 +1,178 @@
+{
+  "api": {
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+    "models": {
+      "fast": "gemini-2.5-flash-image",
+      "quality": "gemini-3.1-flash-image-preview",
+      "pro": "gemini-3-pro-image-preview"
+    },
+    "headers": {
+      "Content-Type": "application/json",
+      "x-goog-api-key": "{GEMINI_API_KEY}"
+    }
+  },
+
+  "templates": {
+    "name_card_full": {
+      "description": "Generate a complete tented name card design (2x3.5 folded)",
+      "request": {
+        "contents": [
+          {
+            "parts": [
+              {
+                "text": "Design a premium tented place card for an event. The card is 3.5 inches wide by 2 inches tall when folded. Show the FRONT face only, flat, from directly above.\n\nGuest name: {guest_name}\nTable: {table_name}\nEvent type: {event_category}\nStyle: {design_style}\nColor palette: primary {color_primary}, accent {color_accent}\nBackground: {bg_color}\n\nDesign requirements:\n- The guest name should be the focal point, centered, elegant and clearly readable\n- Table assignment below the name in smaller text\n- Include subtle decorative elements that match the {design_style} style\n- Clean margins, professional print-ready quality\n- No bleeding edges, white border around the design\n- Photorealistic rendering as if it were a real printed card on a table\n- Aspect ratio should be landscape (wider than tall)\n\nDo NOT include any watermarks, logos, or placeholder text."
+              }
+            ]
+          }
+        ],
+        "generationConfig": {
+          "responseModalities": ["IMAGE"],
+          "imageConfig": {
+            "aspectRatio": "16:9",
+            "imageSize": "2K"
+          }
+        }
+      },
+      "variables": {
+        "guest_name": "The attendee's full name",
+        "table_name": "Table assignment (e.g. 'Table 1')",
+        "event_category": "corporate | retreat | wedding | social",
+        "design_style": "Name from CARD_DESIGNS (e.g. 'Executive', 'Forest', 'Rose')",
+        "color_primary": "Primary text color hex",
+        "color_accent": "Accent color hex",
+        "bg_color": "Background color hex"
+      }
+    },
+
+    "name_card_background": {
+      "description": "Generate a decorative background texture/pattern for name cards",
+      "request": {
+        "contents": [
+          {
+            "parts": [
+              {
+                "text": "Create a seamless decorative background pattern for a premium event place card.\n\nStyle: {design_style}\nEvent type: {event_category}\nColor palette: {color_primary}, {color_accent} on {bg_color}\nBrand colors: {brand_colors}\n\nRequirements:\n- Subtle, elegant pattern that won't overwhelm text placed on top\n- Very low contrast so text remains readable\n- Seamless/tileable\n- No text, no names, no words — pattern only\n- Suitable for professional print at 300 DPI\n- Style should evoke: {mood_keywords}\n\nOutput a flat rectangular image with no perspective or 3D effects."
+              }
+            ]
+          }
+        ],
+        "generationConfig": {
+          "responseModalities": ["IMAGE"],
+          "imageConfig": {
+            "aspectRatio": "16:9",
+            "imageSize": "2K"
+          }
+        }
+      },
+      "variables": {
+        "design_style": "Visual style name",
+        "event_category": "corporate | retreat | wedding | social",
+        "color_primary": "Primary color hex",
+        "color_accent": "Accent color hex",
+        "bg_color": "Background color hex",
+        "brand_colors": "Comma-separated brand color hexes (optional)",
+        "mood_keywords": "e.g. 'minimalist, professional, clean' or 'romantic, floral, soft'"
+      }
+    },
+
+    "name_card_theme": {
+      "description": "Generate a design theme (returns structured JSON with colors, fonts, decorative elements)",
+      "request": {
+        "contents": [
+          {
+            "parts": [
+              {
+                "text": "You are a professional event designer. Create a cohesive name card design theme for the following event.\n\nEvent type: {event_category}\nVenue type: {venue_type}\nBrand colors: {brand_colors}\nSeason/time: {season}\nGuest count: {guest_count}\n\nReturn a JSON object with exactly this structure:\n{\n  \"name\": \"Theme name\",\n  \"font_heading\": \"CSS font-family for the guest name\",\n  \"font_body\": \"CSS font-family for table/details\",\n  \"bg_color\": \"#hex background\",\n  \"text_color\": \"#hex primary text\",\n  \"accent_color\": \"#hex accent/decorative\",\n  \"border_style\": \"none | thin | ornate | double\",\n  \"border_color\": \"#hex\",\n  \"decorative_elements\": [\"top-flourish\", \"corner-ornament\", etc.],\n  \"texture\": \"none | linen | marble | watercolor | foil\",\n  \"mood\": \"one-word mood descriptor\"\n}\n\nGenerate 4 distinct themes that would work well for this event. Return only valid JSON as an array of 4 objects."
+              }
+            ]
+          }
+        ],
+        "generationConfig": {
+          "responseModalities": ["TEXT"]
+        }
+      },
+      "variables": {
+        "event_category": "corporate | retreat | wedding | social",
+        "venue_type": "e.g. 'hotel ballroom', 'vineyard', 'beach'",
+        "brand_colors": "Comma-separated hex colors or 'none'",
+        "season": "e.g. 'summer evening', 'winter formal'",
+        "guest_count": "Number of attendees"
+      }
+    },
+
+    "program_cover": {
+      "description": "Generate a program/booklet cover design for an event",
+      "request": {
+        "contents": [
+          {
+            "parts": [
+              {
+                "text": "Design a beautiful event program cover page.\n\nEvent name: {event_name}\nDate: {event_date}\nLocation: {event_location}\nEvent type: {event_category}\nColor palette: {color_primary}, {color_accent}\nBrand colors: {brand_colors}\n\nRequirements:\n- Portrait orientation (5.5\" x 8.5\")\n- Event name prominently displayed\n- Date and location in smaller text\n- Professional, print-ready design\n- Elegant decorative elements matching the event style\n- No placeholder images or stock photos\n- Clean margins suitable for trimming\n\nRender as a flat, top-down view of the printed cover."
+              }
+            ]
+          }
+        ],
+        "generationConfig": {
+          "responseModalities": ["IMAGE"],
+          "imageConfig": {
+            "aspectRatio": "4:3",
+            "imageSize": "2K"
+          }
+        }
+      },
+      "variables": {
+        "event_name": "Full event name",
+        "event_date": "Formatted date string",
+        "event_location": "Venue and city",
+        "event_category": "corporate | retreat | wedding | social",
+        "color_primary": "Primary color hex",
+        "color_accent": "Accent color hex",
+        "brand_colors": "Comma-separated brand color hexes"
+      }
+    },
+
+    "venue_map": {
+      "description": "Generate a stylized venue/floor plan illustration",
+      "request": {
+        "contents": [
+          {
+            "parts": [
+              {
+                "text": "Create a stylized, illustrated venue map for event guests.\n\nVenue type: {venue_type}\nKey areas to label: {areas}\nStyle: {design_style}\nColor palette: {color_primary}, {color_accent}\n\nRequirements:\n- Bird's eye view, isometric or flat illustration style\n- Clear labels for each area\n- Warm, inviting illustration style (not a technical blueprint)\n- Include icons for restrooms, exits, food areas if relevant\n- Landscape orientation\n- Print-ready quality\n\nThis should look like a hand-drawn or digitally illustrated wayfinding map, not a CAD drawing."
+              }
+            ]
+          }
+        ],
+        "generationConfig": {
+          "responseModalities": ["IMAGE"],
+          "imageConfig": {
+            "aspectRatio": "16:9",
+            "imageSize": "2K"
+          }
+        }
+      },
+      "variables": {
+        "venue_type": "e.g. 'hotel ballroom', 'outdoor garden'",
+        "areas": "Comma-separated area names (e.g. 'Main Hall, Bar, Garden, Registration')",
+        "design_style": "Illustration style to match event theme",
+        "color_primary": "Primary color hex",
+        "color_accent": "Accent color hex"
+      }
+    }
+  },
+
+  "mood_keywords": {
+    "corporate": "minimalist, professional, clean, structured, modern, polished",
+    "retreat": "natural, organic, earthy, warm, rustic, relaxed, botanical",
+    "wedding": "romantic, elegant, soft, floral, delicate, timeless, luxurious",
+    "social": "vibrant, fun, bold, energetic, contemporary, playful, eclectic"
+  },
+
+  "usage_notes": {
+    "api_key_env": "VITE_GEMINI_API_KEY (frontend) or GEMINI_API_KEY (backend)",
+    "rate_limits": "Check current Gemini API rate limits for your tier",
+    "caching": "Cache generated images by design_style + event_category to avoid redundant calls",
+    "fallback": "If image generation fails, fall back to the existing CSS-rendered card designs",
+    "batch_strategy": "Generate one preview per design style, not per guest — swap guest name via CSS overlay"
+  }
+}

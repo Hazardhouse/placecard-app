@@ -1,0 +1,120 @@
+import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import EventList from "./pages/EventList";
+import EventDetail from "./pages/EventDetail";
+import AttendeeDetail from "./pages/AttendeeDetail";
+import AccountPage from "./pages/AccountPage";
+import LoginPage from "./pages/LoginPage";
+import PublicForm from "./pages/PublicForm";
+import RestaurantView from "./pages/RestaurantView";
+import PublicEvent from "./pages/PublicEvent";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import logoSvg from "./assets/placecard-logo.svg";
+import "./App.css";
+
+function UserDropdown() {
+  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user, signOut } = useAuth();
+
+  const displayName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "User";
+
+  // Stash where the user came from so the Account page's back arrow can
+  // return there, jumping past any submenu navigation that happens inside
+  // Account itself.
+  const goToAccount = (path: string) => {
+    setOpen(false);
+    const from = location.pathname.startsWith("/account") ? "/" : location.pathname;
+    navigate(path, { state: { from } });
+  };
+
+  return (
+    <div className="user-dropdown-wrap">
+      <button className="user-dropdown-trigger" onClick={() => setOpen(!open)}>
+        Hi, {displayName}
+        <span className={`user-dropdown-caret ${open ? "open" : ""}`} />
+      </button>
+      {open && (
+        <>
+          <div className="user-dropdown-backdrop" onClick={() => setOpen(false)} />
+          <div className="user-dropdown-menu">
+            <button className="user-dropdown-item" onClick={() => goToAccount("/account")}>
+              Account
+            </button>
+            <button className="user-dropdown-item user-dropdown-logout" onClick={() => { setOpen(false); signOut(); }}>
+              Logout
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ProtectedLayout() {
+  const { user, loading } = useAuth();
+
+  // Tag <body> on every authenticated page so the gradient background turns on
+  useEffect(() => {
+    document.body.classList.add("on-app-page");
+    return () => { document.body.classList.remove("on-app-page"); };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="app">
+        <div className="page loading" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <Link to="/" className="logo"><img src={logoSvg} alt="PlaceCard" className="logo-img" /></Link>
+        <div className="header-right">
+          <div className="presence-avatars">
+            <div className="presence-avatar" style={{ background: "#e91e8f" }} title="Dani Bradford">DB</div>
+            <div className="presence-avatar" style={{ background: "#1b4fff" }} title="Matthew">M</div>
+            <div className="presence-avatar" style={{ background: "#16a34a" }} title="Surya">S</div>
+          </div>
+          <UserDropdown />
+        </div>
+      </header>
+      <main>
+        <Routes>
+          <Route path="/" element={<EventList />} />
+          <Route path="/events/:eventId" element={<EventDetail />} />
+          <Route path="/events/:eventId/attendees/:attendeeId" element={<AttendeeDetail />} />
+          <Route path="/account" element={<AccountPage />} />
+          <Route path="/account/:section" element={<AccountPage />} />
+          <Route path="/login" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/forms/:shareToken" element={<PublicForm />} />
+          <Route path="/restaurant/:variant/:shareToken" element={<RestaurantView />} />
+          <Route path="/event/:token" element={<PublicEvent />} />
+          <Route path="/*" element={<ProtectedLayout />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
+
+export default App;

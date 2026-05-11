@@ -1,0 +1,74 @@
+{
+  "name": "Brand Color Extraction",
+  "description": "Extracts 4 brand colors from a user-provided website URL when the 'Extract Colors' CTA is clicked.",
+  "trigger": "User enters a URL in the Event Branding input and clicks 'Extract Colors'",
+
+  "workflow": {
+    "step_1_fetch": {
+      "action": "Fetch the website HTML from the user-provided URL",
+      "details": "Server-side GET request to the URL with a standard User-Agent header. Follow redirects. Timeout after 10 seconds."
+    },
+    "step_2_fetch_css": {
+      "action": "Extract and fetch linked CSS files from the HTML",
+      "details": "Parse all <link rel='stylesheet' href='...'> tags. Fetch up to 3 CSS files. Combine all CSS text for color analysis."
+    },
+    "step_3_extract_raw_colors": {
+      "action": "Parse all color values from HTML and CSS",
+      "details": "Extract all hex codes (#xxxxxx, #xxx), rgb() values, and CSS custom properties containing colors. Deduplicate and collect up to 60 unique colors."
+    },
+    "step_4_extract_header": {
+      "action": "Isolate the header/nav HTML snippet",
+      "details": "Find the <header> or <nav> element in the HTML. This provides context about logo colors and header branding. If no header/nav found, use the first 3000 characters of the HTML body."
+    },
+    "step_5_ai_analysis": {
+      "action": "Send extracted colors and header snippet to Gemini for intelligent color identification",
+      "model": "gemini-2.5-flash-image",
+      "prompt": "See 'gemini_prompt' below"
+    },
+    "step_6_display": {
+      "action": "Display 4 color swatches with hex codes, edit capability, and remove buttons",
+      "details": "Each swatch is clickable to edit the hex code inline. Each has an X button to remove. Colors persist until the user navigates away or updates."
+    }
+  },
+
+  "gemini_prompt": {
+    "system_context": "You are a brand identity expert analyzing a website to extract its core brand colors.",
+    "request": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "You are a brand identity expert analyzing a website to extract its core brand colors.\n\nI have scraped a website and extracted these raw color values from its HTML and CSS:\n{all_colors}\n\nHere is the HTML from the website's header/navigation area where the logo lives:\n{header_html}\n\nAnalyze this data and return exactly 4 colors in this specific order:\n\n1. **Logo Primary**: The exact hex color of the most prominent color in the actual logo. Look at the header HTML for SVG fills, icon colors, or styled text that forms the logo. Return the exact hex code of the single most dominant color in the logo itself.\n\n2. **Logo Secondary**: The exact hex color of the second most prominent color in the logo/header area. If the logo uses only one color, return the next most-used color in the header/nav area (link color, background, accent). This must be different from Logo Primary.\n\n3. **CTA Color**: Find the primary call-to-action button color. Look for colors applied to <button> elements, elements with classes like 'btn', 'cta', 'primary', or <a> tags styled as buttons. This is the direct hex color of the main action button — not a hover state, not a border, but the background-color of the primary CTA.\n\n4. **Neutral Color**: The main neutral color used across the website for body text, borders, or section backgrounds. This should be a gray, off-white, off-black, or muted tone (not pure #ffffff or #000000). Pick the neutral hex that appears most frequently.\n\nIMPORTANT:\n- All 4 colors must be different from each other\n- Return valid 6-digit hex codes only (e.g. #1a2b3c)\n- Do NOT return pure white (#ffffff) or pure black (#000000)\n- Base your answers on the actual color data provided, not assumptions about the brand\n\nReturn ONLY a JSON array with exactly 4 objects, no markdown, no explanation:\n[\n  {\"hex\": \"#xxxxxx\", \"role\": \"logo_primary\", \"label\": \"Logo Primary\"},\n  {\"hex\": \"#xxxxxx\", \"role\": \"logo_secondary\", \"label\": \"Logo Secondary\"},\n  {\"hex\": \"#xxxxxx\", \"role\": \"cta\", \"label\": \"CTA Color\"},\n  {\"hex\": \"#xxxxxx\", \"role\": \"neutral\", \"label\": \"Neutral Color\"}\n]"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": ["TEXT"]
+      }
+    },
+    "variables": {
+      "all_colors": "Comma-separated list of all hex colors found in the website HTML and CSS (up to 60)",
+      "header_html": "The raw HTML content of the <header> or <nav> element (up to 2000 chars)"
+    }
+  },
+
+  "output": {
+    "format": [
+      {"position": 1, "role": "logo_primary", "label": "Logo Primary", "description": "The exact hex color of the most prominent color in the actual logo"},
+      {"position": 2, "role": "logo_secondary", "label": "Logo Secondary", "description": "The exact hex color of the second most prominent color in the logo/header area"},
+      {"position": 3, "role": "cta", "label": "CTA Color", "description": "The exact hex of the primary call-to-action button"},
+      {"position": 4, "role": "neutral", "label": "Neutral Color", "description": "The main neutral tone used for text/backgrounds"}
+    ],
+    "user_actions": {
+      "click_swatch": "Opens inline hex editor to modify the color",
+      "click_x": "Removes the color from the palette",
+      "click_update": "Re-runs extraction with the same URL to refresh colors"
+    }
+  },
+
+  "fallback": {
+    "when": "Gemini API key not configured or API call fails",
+    "strategy": "Heuristic extraction: sort all scraped colors by saturation. Most saturated = logo_primary, second = logo_secondary, third = cta. Least saturated (excluding pure white/black) = neutral."
+  }
+}

@@ -1,0 +1,108 @@
+# ============================================================================
+# placecard-app — repository-root .gitignore
+# Marketing site (website/) is excluded entirely; it lives in placecard-website.
+# ============================================================================
+
+# Marketing site — separate repository (Hazardhouse/placecard-website)
+website/
+
+# ── Secrets (NEVER commit) ─────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.bak
+.env.backup
+**/.env
+**/.env.local
+**/.env.*.local
+**/.env.bak
+
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+.tox/
+.nox/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ── Node / Vite ────────────────────────────────────────────────────────────
+node_modules/
+.npm
+.eslintcache
+.parcel-cache
+.vite/
+dist/
+dist-ssr/
+*.local
+
+# Build outputs
+frontend/dist/
+frontend/build/
+
+# ── Databases (local dev only — production uses Supabase Postgres) ────────
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+backend/event_planning.db
+backend/placecard.db
+
+# ── OS / IDE ────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE configs
+.vscode/
+.idea/
+*.iml
+.claude/
+
+# ── Logs ────────────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Generated images / temp ────────────────────────────────────────────────
+backend/generated_designs/
+backend/tmp/
+.tmp/

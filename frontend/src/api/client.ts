@@ -1,6 +1,9 @@
 import { supabase } from "../lib/supabase";
 
-const API_BASE = "http://localhost:8000/api";
+// API base URL. In production, set VITE_API_URL on the hosting platform
+// (Cloudflare Pages env vars) to e.g. "https://api.placecard-events.app/api".
+// In local dev, falls back to the local FastAPI server.
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();

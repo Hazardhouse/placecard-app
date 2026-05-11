@@ -9,10 +9,18 @@ Importing the model packages here is intentional: it has the side effect
 of registering every model class against `Base.metadata`, which is what
 Alembic's `--autogenerate` walks to diff schema vs. database.
 """
+import os
+import sys
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 from alembic import context
+
+# Ensure `app/` is importable. The `alembic` console script doesn't put
+# the cwd on sys.path the way `python -m alembic` does — without this,
+# `from app.config import settings` fails in production environments
+# (Render) where the bare `alembic` command runs the migration.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Bring the app's runtime configuration into Alembic's world.
 from app.config import settings  # noqa: E402

@@ -20,3 +20,6 @@ python-multipart==0.0.12
 psycopg[binary]==3.2.3
 # JWT verification for the Supabase auth middleware (added in Phase 4)
 PyJWT==2.9.0
+# Rate limiting middleware. Defaults are conservative; override
+# per-route with @limiter.limit("X/minute") as needed (SOP §1.4).
+slowapi==0.1.9

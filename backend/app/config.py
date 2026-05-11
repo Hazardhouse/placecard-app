@@ -11,6 +11,15 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
     supabase_url: str = ""
     supabase_service_key: str = ""
+    # Supabase project JWT secret — used by auth.py to verify the
+    # Authorization Bearer tokens that the frontend sends. Find it in
+    # Supabase → Settings → API → JWT Secret. Required when
+    # require_auth=true.
+    supabase_jwt_secret: str = ""
+    # Master gate for the JWT auth dependency. Defaults to off so local
+    # development isn't broken by missing tokens. Production sets this
+    # to "true" via Render env vars; staging/preview can stay off.
+    require_auth: bool = False
     fourover_api_key: str = ""
     fourover_private_key: str = ""
     fourover_mode: str = "sandbox"

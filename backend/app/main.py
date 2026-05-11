@@ -3,9 +3,11 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from app.config import settings
-from app.database import Base, engine
 from app.models import event, attendee, table, seating as seating_models, google_form, schedule as schedule_models  # noqa: F401 - register all models
 from app.models import notification as notification_models  # noqa: F401
 from app.models import custom_form as custom_form_models  # noqa: F401
@@ -13,85 +15,11 @@ from app.routers import attendees, events, fourover, places, seating, tables, sc
 
 logger = logging.getLogger(__name__)
 
-Base.metadata.create_all(bind=engine)
-
-# Migrate: add new columns to existing tables if missing
-with engine.connect() as conn:
-    from sqlalchemy import text
-    try:
-        conn.execute(text("ALTER TABLE events ADD COLUMN venue_type VARCHAR(100)"))
-        conn.commit()
-    except Exception:
-        pass  # Column already exists
-
-    try:
-        conn.execute(text("ALTER TABLE events ADD COLUMN restaurant_share_token VARCHAR(64)"))
-        conn.commit()
-    except Exception:
-        pass  # Column already exists
-
-    try:
-        conn.execute(text("ALTER TABLE events ADD COLUMN seating_share_token VARCHAR(64)"))
-        conn.commit()
-    except Exception:
-        pass  # Column already exists
-
-    try:
-        conn.execute(text("ALTER TABLE events ADD COLUMN public_token VARCHAR(64)"))
-        conn.commit()
-    except Exception:
-        pass  # Column already exists
-
-    try:
-        conn.execute(text("ALTER TABLE events ADD COLUMN image_data TEXT"))
-        conn.commit()
-    except Exception:
-        pass  # Column already exists
-
-    # Backfill: every event needs a public_token. Generate one for any that
-    # are missing (e.g. created before this column existed).
-    try:
-        import secrets as _secrets
-        rows = conn.execute(text("SELECT id FROM events WHERE public_token IS NULL")).fetchall()
-        for (event_id,) in rows:
-            conn.execute(
-                text("UPDATE events SET public_token = :tok WHERE id = :id"),
-                {"tok": _secrets.token_urlsafe(32), "id": event_id},
-            )
-        conn.commit()
-    except Exception:
-        pass
-
-    # Migrate notification_settings
-    for col, typ in [
-        ("sms_enabled", "BOOLEAN DEFAULT 0"),
-        ("whatsapp_enabled", "BOOLEAN DEFAULT 0"),
-    ]:
-        try:
-            conn.execute(text(f"ALTER TABLE notification_settings ADD COLUMN {col} {typ}"))
-            conn.commit()
-        except Exception:
-            pass
-
-    # Migrate notification_logs for channel field
-    try:
-        conn.execute(text("ALTER TABLE notification_logs ADD COLUMN channel VARCHAR(20) DEFAULT 'sms'"))
-        conn.commit()
-    except Exception:
-        pass
-
-    # Migrate schedule_items for new fields
-    for col, typ in [
-        ("description", "TEXT"),
-        ("assigned_to", "VARCHAR(255)"),
-        ("assign_notes", "TEXT"),
-        ("meal_options", "TEXT"),
-    ]:
-        try:
-            conn.execute(text(f"ALTER TABLE schedule_items ADD COLUMN {col} {typ}"))
-            conn.commit()
-        except Exception:
-            pass
+# Schema is owned by Alembic. Run `alembic upgrade head` against the
+# target DB before serving — Render's Start Command does this, and local
+# dev should too. The previous on-startup `Base.metadata.create_all` and
+# ad-hoc `ALTER TABLE` block are gone (kept in git history at commit
+# 7b9dfe8 if needed).
 
 def _start_scheduler():
     """Start the APScheduler background job for notification reminders."""
@@ -118,6 +46,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+
+# Rate limiting (SOP §1.4). Default ceiling protects every endpoint;
+# specific routes can override with @limiter.limit("X/period") — e.g.
+# login should be 5/minute/IP, invite endpoint 10/hour.
+# `get_remote_address` keys by client IP, which is the right default
+# for unauthenticated traffic. Once auth.py is enforced we may want
+# to switch to keying by user_id for authenticated endpoints.
+limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS — explicit allow-list from env var (no wildcard in production).
 # `ALLOWED_ORIGINS` is a comma-separated list of origins. SOP §2.1.

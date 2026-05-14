@@ -12,6 +12,7 @@ const EVENT_CATEGORIES = [
 ];
 
 const VENUE_TYPE_ICONS: Record<string, string> = {
+  "Home": "🏠",
   "Restaurant": "🍽", "Pub": "🍺", "Bar": "🍸", "Hotel": "🏨", "Ballroom": "✨",
   "Park": "🌳", "Museum": "🏛", "Gallery": "🖼", "Conference Centre": "🏢",
   "Private Club": "🎩", "Rooftop": "🌆", "Vineyard": "🍷", "Beach": "🏖",

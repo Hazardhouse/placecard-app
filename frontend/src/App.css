@@ -2263,6 +2263,7 @@ select:focus {
 .seating-board {
   display: flex;
   gap: 16px;
+  position: relative;  /* positioning context for the .sb-mobile-fab toggle */
 }
 
 .canvas-container {
@@ -2397,19 +2398,74 @@ select:focus {
   color: var(--danger);
 }
 
+/* Attendee panel — hidden by default, shown when `sb-sidebar-mobile-open`
+   class is applied (the JS toggles this on every breakpoint). The class
+   name is legacy from when this was mobile-only. */
 .sb-sidebar {
   width: 220px;
   border-left: 1px solid var(--border);
-  display: flex;
+  display: none;
   flex-direction: column;
   background: white;
   overflow: hidden;
 }
+.sb-sidebar.sb-sidebar-mobile-open {
+  display: flex;
+}
 
-/* Mobile toggle + close button — hidden on desktop */
-.sb-mobile-fab,
+/* Close button on the panel — shown on every breakpoint. */
 .sb-sidebar-mobile-close {
-  display: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  z-index: 2;
+  border-radius: 6px;
+}
+.sb-sidebar-mobile-close:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text);
+}
+
+/* Attendee panel toggle — pinned to the bottom-left of the seating
+   board (positioning context is `.seating-board { position: relative }`). */
+.sb-mobile-fab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: absolute;
+  left: 12px;
+  bottom: 16px;
+  padding: 6px 14px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  /* Small shadow that fits within the parent's bottom padding so it
+     doesn't get clipped by overflow:hidden on a wrapper. */
+  box-shadow: 0 2px 6px rgba(27, 79, 255, 0.30);
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 30;
+}
+.sb-mobile-fab:hover {
+  box-shadow: 0 3px 9px rgba(27, 79, 255, 0.4);
+}
+/* Subtle visual difference when the panel is currently open — same button,
+   but reads as "active" so it's clear clicking will close. */
+.sb-mobile-fab-active {
+  background: #0f2eb3;
 }
 
 .sb-sidebar-handle {
@@ -4938,6 +4994,45 @@ select:focus {
   height: 15px;
   flex-shrink: 0;
 }
+
+/* Event drawer date row — overrides the global .form-row grid (1fr 1fr)
+   so the One-day checkbox can sit right next to the date picker(s)
+   rather than stranded in an empty grid column. */
+.event-drawer-date-row {
+  display: flex;
+  grid-template-columns: none;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.event-drawer-date-row .form-group {
+  flex: 0 0 auto;
+}
+.event-drawer-oneday-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  /* Match the form-group's label baseline */
+  padding-top: 2px;
+}
+.event-drawer-oneday-checkbox input[type="checkbox"] {
+  accent-color: #1b4fff;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  /* Override the global input { width: 100% } rule. */
+  padding: 0;
+  border: none;
+}
+.event-drawer-oneday-checkbox input[type="checkbox"]:focus {
+  border: none;
+  box-shadow: none;
+}
 /* Autocomplete dropdown */
 .autocomplete-wrap {
   position: relative;
@@ -7083,12 +7178,9 @@ select:focus {
     justify-content: center;
   }
 
-  /* Seating: hide the sidebar by default, show as floating moveable panel when toggled */
-  .sb-sidebar {
-    display: none;
-  }
+  /* Mobile: when the panel is open, it floats as a moveable overlay
+     rather than docking to the right edge (there isn't one). */
   .sb-sidebar.sb-sidebar-mobile-open {
-    display: flex;
     position: absolute;
     top: 12px;
     right: 12px;
@@ -7096,50 +7188,17 @@ select:focus {
     max-height: 60vh;
     z-index: 20;
     border: 1px solid var(--border);
-    border-left: 1px solid var(--border);
     border-radius: 10px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
   }
-  .sb-sidebar-mobile-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    font-size: 18px;
-    cursor: pointer;
-    z-index: 2;
-  }
-  .sb-sidebar-mobile-close:hover {
-    color: var(--text);
-  }
 
-  /* Floating toggle FAB — bottom-left so it clears the bottom tab nav */
+  /* On mobile, keep the FAB above the bottom tab nav, still on the left. */
   .sb-mobile-fab {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    position: fixed;
-    left: 16px;
-    bottom: 76px; /* sits above the fixed bottom tab nav */
+    left: 12px;
+    bottom: 76px;
     padding: 10px 14px;
-    background: var(--primary);
-    color: #fff;
-    border: none;
     border-radius: 24px;
-    box-shadow: 0 4px 14px rgba(27, 79, 255, 0.35);
     font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    z-index: 90;
-    width: auto;
   }
   .sb-mobile-fab-label {
     white-space: nowrap;

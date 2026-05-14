@@ -201,8 +201,13 @@ export default function SeatingBoard({
   const [sidebarPos, setSidebarPos] = useState<{ x: number; y: number } | null>(null);
   const sidebarDragRef = useRef<{ origX: number; origY: number; startX: number; startY: number } | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  // Mobile: attendee panel toggled hidden by default so tables have room
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // Attendee panel can be shown/hidden on every breakpoint. Default
+  // depends on viewport: open on desktop (lots of room), closed on
+  // mobile (tables need the space).
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.innerWidth > 640;
+  });
 
   // Draw-to-create state
   const [drawing, setDrawing] = useState(false);
@@ -1017,12 +1022,14 @@ export default function SeatingBoard({
         </Stage>
       </div>
 
-      {/* Mobile floating toggle — shows count of unassigned attendees */}
+      {/* Floating toggle — always visible. Click toggles the panel
+          open/closed. Works on every breakpoint. */}
       <button
         type="button"
-        className="sb-mobile-fab"
-        onClick={() => setMobileSidebarOpen(true)}
-        aria-label="Show attendees"
+        className={`sb-mobile-fab ${mobileSidebarOpen ? "sb-mobile-fab-active" : ""}`}
+        onClick={() => setMobileSidebarOpen(v => !v)}
+        aria-label={mobileSidebarOpen ? "Hide attendees" : "Show attendees"}
+        aria-pressed={mobileSidebarOpen}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />

@@ -12,12 +12,13 @@ const EVENT_CATEGORIES = [
 ];
 
 const VENUE_TYPES = [
-  "Restaurant", "Pub", "Bar", "Hotel", "Ballroom", "Park",
+  "Home", "Restaurant", "Pub", "Bar", "Hotel", "Ballroom", "Park",
   "Museum", "Gallery", "Conference Centre", "Private Club", "Rooftop",
   "Vineyard", "Beach", "Garden", "Farm", "Other",
 ];
 
 const VENUE_TYPE_ICONS: Record<string, string> = {
+  "Home": "🏠",
   "Restaurant": "🍽", "Pub": "🍺", "Bar": "🍸", "Hotel": "🏨", "Ballroom": "✨",
   "Park": "🌳", "Museum": "🏛", "Gallery": "🖼", "Conference Centre": "🏢",
   "Private Club": "🎩", "Rooftop": "🌆", "Vineyard": "🍷", "Beach": "🏖",
@@ -61,6 +62,7 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const [openPicker, setOpenPicker] = useState<null | "start" | "end">(null);
+  const [oneDay, setOneDay] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -77,8 +79,12 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
     setConfirmDelete(false);
     if (event) {
       setName(event.name);
-      setStartDate(toDateInputValue(event.start_date));
-      setEndDate(toDateInputValue(event.end_date));
+      const s = toDateInputValue(event.start_date);
+      const e = toDateInputValue(event.end_date);
+      setStartDate(s);
+      setEndDate(e);
+      // One-day when there's no end date, or when start and end are the same day.
+      setOneDay(!e || s === e);
       setLocation(event.location || "");
       setVenue(event.venue || "");
       setVenueType(event.venue_type || "");
@@ -87,6 +93,7 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
       setImageData(event.image_data || null);
     } else {
       setName(""); setStartDate(""); setEndDate("");
+      setOneDay(true);
       setLocation(""); setVenue(""); setVenueType("");
       setEventCategory(""); setDescription("");
       setImageData(null);
@@ -267,38 +274,60 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
               required
             />
           </div>
-          <div className="form-row">
+          <div className="form-row event-drawer-date-row">
             <div className="form-group">
-              <label>Start Date</label>
+              <label>{oneDay ? "Date" : "Start Date"}</label>
               <DatePicker
                 value={startDate}
-                placeholder="Pick a start date"
-                label="Start date"
+                placeholder={oneDay ? "Pick a date" : "Pick a start date"}
+                label={oneDay ? "Date" : "Start date"}
                 open={openPicker === "start"}
                 onOpen={() => setOpenPicker("start")}
                 onClose={() => setOpenPicker(p => (p === "start" ? null : p))}
                 onChange={(v) => {
                   setStartDate(v);
-                  if (!endDate || v > endDate) setEndDate(v);
+                  // Keep end_date in sync for one-day events.
+                  if (oneDay || !endDate || v > endDate) setEndDate(v);
                 }}
                 onPick={() => {
-                  setOpenPicker("end");
+                  // Only auto-open the end picker for multi-day events.
+                  if (!oneDay) setOpenPicker("end");
                 }}
               />
             </div>
-            <div className="form-group">
-              <label>End Date</label>
-              <DatePicker
-                value={endDate}
-                placeholder="Pick an end date"
-                label="End date"
-                minDate={startDate || undefined}
-                open={openPicker === "end"}
-                onOpen={() => setOpenPicker("end")}
-                onClose={() => setOpenPicker(p => (p === "end" ? null : p))}
-                onChange={setEndDate}
+            {!oneDay && (
+              <div className="form-group">
+                <label>End Date</label>
+                <DatePicker
+                  value={endDate}
+                  placeholder="Pick an end date"
+                  label="End date"
+                  minDate={startDate || undefined}
+                  open={openPicker === "end"}
+                  onOpen={() => setOpenPicker("end")}
+                  onClose={() => setOpenPicker(p => (p === "end" ? null : p))}
+                  onChange={setEndDate}
+                />
+              </div>
+            )}
+            <label className="event-drawer-oneday-checkbox">
+              <input
+                type="checkbox"
+                checked={oneDay}
+                onChange={e => {
+                  const checked = e.target.checked;
+                  setOneDay(checked);
+                  // When flipping ON, collapse end to start (single-day event).
+                  // When flipping OFF, ensure end exists so the picker isn't empty.
+                  if (checked) {
+                    setEndDate(startDate);
+                  } else if (!endDate && startDate) {
+                    setEndDate(startDate);
+                  }
+                }}
               />
-            </div>
+              <span>One-day</span>
+            </label>
           </div>
           <div className="form-group" style={{ position: "relative" }}>
             <label>Location</label>

@@ -30,6 +30,30 @@ function toDateInputValue(iso: string | null): string {
   return iso.slice(0, 10);
 }
 
+// Pull the HH:MM portion (local timezone) from an ISO datetime string.
+// Returns "" when the input is missing/invalid or when the local time
+// is exactly midnight — midnight is treated as "no time set" so old
+// events stored as date-only don't surface a misleading 00:00.
+function toTimeInputValue(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const hh = d.getHours();
+  const mm = d.getMinutes();
+  if (hh === 0 && mm === 0) return "";
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+// Combine a YYYY-MM-DD date with an optional HH:MM time into an
+// ISO timestamp. Empty time falls back to the existing date-only
+// behavior (UTC midnight) — keeps backward compatibility for events
+// where the organizer never picked a time.
+function combineDateTime(date: string, time: string): string | null {
+  if (!date) return null;
+  if (!time) return new Date(date).toISOString();
+  return new Date(`${date}T${time}`).toISOString();
+}
+
 type Prediction = { place_id: string; description: string; main_text: string; secondary_text: string };
 
 type Props = {
@@ -52,6 +76,12 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  // Time fields — currently surfaced only for one-day events. The
+  // backend stores the combined ISO timestamp; an empty time falls
+  // back to date-only (UTC midnight) so existing event records aren't
+  // disturbed when the organizer doesn't pick a time.
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [location, setLocation] = useState("");
   const [venue, setVenue] = useState("");
   const [venueType, setVenueType] = useState("");
@@ -83,6 +113,8 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
       const e = toDateInputValue(event.end_date);
       setStartDate(s);
       setEndDate(e);
+      setStartTime(toTimeInputValue(event.start_date));
+      setEndTime(toTimeInputValue(event.end_date));
       // One-day when there's no end date, or when start and end are the same day.
       setOneDay(!e || s === e);
       setLocation(event.location || "");
@@ -93,6 +125,7 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
       setImageData(event.image_data || null);
     } else {
       setName(""); setStartDate(""); setEndDate("");
+      setStartTime(""); setEndTime("");
       setOneDay(true);
       setLocation(""); setVenue(""); setVenueType("");
       setEventCategory(""); setDescription("");
@@ -147,10 +180,12 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
     e.preventDefault();
     if (saving) return;
     setSaving(true);
+    // Time inputs are only surfaced (and applied) for one-day events.
+    // For multi-day events, fall back to the existing date-only behavior.
     const data = {
       name,
-      start_date: startDate ? new Date(startDate).toISOString() : null,
-      end_date: endDate ? new Date(endDate).toISOString() : null,
+      start_date: combineDateTime(startDate, oneDay ? startTime : ""),
+      end_date: combineDateTime(endDate, oneDay ? endTime : ""),
       location: location || null,
       venue: venue || null,
       venue_type: venueType || null,
@@ -329,6 +364,30 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
               <span>One-day</span>
             </label>
           </div>
+          {/* Start / End time — one-day events only. Multi-day events fall
+              back to date-only until we ship full date+time pickers for
+              both ends. Empty time => date-only save (UTC midnight), so
+              the organizer can choose to skip times entirely. */}
+          {oneDay && (
+            <div className="form-row event-drawer-time-row">
+              <div className="form-group">
+                <label>Start Time</label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={e => setStartTime(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>End Time</label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={e => setEndTime(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
           <div className="form-group" style={{ position: "relative" }}>
             <label>Location</label>
             <input

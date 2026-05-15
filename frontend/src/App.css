@@ -5033,6 +5033,17 @@ select:focus {
   border: none;
   box-shadow: none;
 }
+/* Start / End time row — sits directly below the date row for one-day
+   events. Two equal columns on desktop; the global .form-row already
+   handles the stack-on-mobile behavior. */
+.event-drawer-time-row {
+  margin-top: -4px;
+}
+.event-drawer-time-row input[type="time"] {
+  /* Match the date picker's vertical rhythm rather than the global
+     input padding which makes the time control feel oversized. */
+  padding: 9px 12px;
+}
 /* Autocomplete dropdown */
 .autocomplete-wrap {
   position: relative;

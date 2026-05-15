@@ -18,8 +18,11 @@ python-multipart==0.0.12
 # database_url default. psycopg[binary] avoids the libpq compile step
 # on Render's build image — significantly faster cold-build times.
 psycopg[binary]==3.2.3
-# JWT verification for the Supabase auth middleware (added in Phase 4)
-PyJWT==2.9.0
+# JWT verification for the Supabase auth middleware. The `crypto` extra
+# pulls in `cryptography`, which PyJWT needs to verify ES256/RS256
+# tokens — Supabase moved off the legacy HS256 shared secret to
+# asymmetric signing keys (ECC P-256 by default) in 2024-2025.
+PyJWT[crypto]==2.9.0
 # Rate limiting middleware. Defaults are conservative; override
 # per-route with @limiter.limit("X/minute") as needed (SOP §1.4).
 slowapi==0.1.9

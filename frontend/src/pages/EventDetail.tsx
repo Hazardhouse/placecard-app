@@ -700,6 +700,13 @@ export default function EventDetail() {
             <p className="event-sidebar-description">{event.description}</p>
           )}
           </div>
+
+          {/* Map sits inside the sticky sidebar so its vertical position
+              doesn't jump every time the main column changes height
+              (different tabs render content of very different heights —
+              empty Attendees vs Seating canvas). The card self-hides if
+              neither venue nor location is set. */}
+          <EventMapCard venue={event.venue} location={event.location} />
         </aside>
 
         <div className="event-main">
@@ -1067,18 +1074,6 @@ export default function EventDetail() {
       )}
         </div>
       </div>
-
-      {/* Footer row — map on the left, right half reserved for future
-          content (event meta, share links, etc). Hidden entirely when
-          neither venue nor location is set. */}
-      {(event.venue || event.location) && (
-        <div className="event-footer-row">
-          <div className="event-footer-col event-footer-col-left">
-            <EventMapCard venue={event.venue} location={event.location} />
-          </div>
-          <div className="event-footer-col event-footer-col-right" />
-        </div>
-      )}
 
       {/* ── Attendee Edit Drawer ── */}
       {editDrawerOpen && <div className="drawer-backdrop" onClick={closeEditDrawer} />}

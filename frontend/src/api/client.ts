@@ -335,6 +335,11 @@ export const api = {
             attendee_name: string | null;
             dietary: string | null;
           }[];
+          x_position: number;
+          y_position: number;
+          width: number;
+          height: number;
+          rotation: number;
         }[];
         meal_totals?: {
           venue: string;

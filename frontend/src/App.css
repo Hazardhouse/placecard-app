@@ -6459,6 +6459,32 @@ select:focus {
   border-color: #1b4fff;
   color: #1b4fff;
 }
+.rv-floor-plan-wrap {
+  margin-bottom: 28px;
+}
+.rv-floor-plan-heading {
+  font-size: 1rem;
+  color: #1a1a2e;
+  margin: 0 0 12px;
+}
+.rv-floor-plan {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  overflow: hidden;
+}
+.rv-floor-plan svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 560px;
+}
+.rv-floor-plan-hint {
+  font-size: 0.78rem;
+  color: #9ca3af;
+  margin: 8px 0 0;
+}
 .rv-tables-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -6627,16 +6653,14 @@ select:focus {
   width: 100%;
   max-width: 600px;
 }
-.public-form-logo {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--primary, #1b4fff);
+/* Old type-treatment logo (.public-form-logo + span) — replaced by the
+   real SVG below. Kept the class names for any external references
+   but visual treatment now lives in .public-form-logo-img. */
+.public-form-logo-img {
+  display: block;
+  height: 32px;
+  width: auto;
   margin-bottom: 24px;
-}
-.public-form-logo span {
-  border: 1px solid var(--primary, #1b4fff);
-  border-radius: 3px;
-  padding: 0 4px;
 }
 .public-form-event-header {
   margin-bottom: 16px;
@@ -6682,6 +6706,24 @@ select:focus {
 }
 .public-form-radio-option input, .public-form-checkbox-option input {
   width: auto;
+}
+.public-form-marketing-optin {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #6b7280;
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.public-form-marketing-optin input[type="checkbox"] {
+  width: auto;
+  margin-top: 2px;
+  flex-shrink: 0;
 }
 .public-form-submit {
   margin-top: 8px;

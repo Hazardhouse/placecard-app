@@ -1,7 +1,9 @@
 import secrets
+from datetime import datetime, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -74,6 +76,73 @@ def get_public_event(token: str, db: Session = Depends(get_db)):
     resp = EventResponse.model_validate(event)
     resp.attendee_count = len(event.attendees)
     return resp
+
+
+def _ics_escape(text: str) -> str:
+    """Escape special characters for the iCalendar format."""
+    return (
+        text.replace("\\", "\\\\")
+            .replace(";", "\\;")
+            .replace(",", "\\,")
+            .replace("\n", "\\n")
+    )
+
+
+@public_router.get("/public-event/{token}/calendar.ics")
+def get_event_calendar(token: str, db: Session = Depends(get_db)) -> Response:
+    """Generate an iCalendar (.ics) file for the event.
+
+    Linked from confirmation emails and the public event page so
+    attendees can add the event to Apple Calendar, Outlook, etc.
+    Google Calendar uses a different mechanism (templated URL) and
+    doesn't need this endpoint.
+    """
+    event = db.query(Event).filter(Event.public_token == token).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    # Stored datetimes are naive UTC (we strip the Z on insert). Convert
+    # back to UTC for the .ics output. If a start time isn't set, fall
+    # back to a sensible default so the file is still valid.
+    start = event.start_date or datetime.utcnow()
+    end = event.end_date or (start + timedelta(hours=2))
+    # Single-day events stored with end == start get a default 2-hour
+    # duration so calendar apps don't render them as zero-length.
+    if end <= start:
+        end = start + timedelta(hours=2)
+
+    summary = _ics_escape(event.name or "Event")
+    description = _ics_escape(event.description or "")
+    location_parts = [p for p in (event.venue, event.location) if p]
+    location = _ics_escape(" · ".join(location_parts))
+    now_stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    start_stamp = start.strftime("%Y%m%dT%H%M%SZ")
+    end_stamp = end.strftime("%Y%m%dT%H%M%SZ")
+
+    body = (
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//PlaceCard//Event//EN\r\n"
+        "CALSCALE:GREGORIAN\r\n"
+        "METHOD:PUBLISH\r\n"
+        "BEGIN:VEVENT\r\n"
+        f"UID:placecard-event-{event.id}@placecard-events.app\r\n"
+        f"DTSTAMP:{now_stamp}\r\n"
+        f"DTSTART:{start_stamp}\r\n"
+        f"DTEND:{end_stamp}\r\n"
+        f"SUMMARY:{summary}\r\n"
+        f"DESCRIPTION:{description}\r\n"
+        f"LOCATION:{location}\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n"
+    )
+    return Response(
+        content=body,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{event.name}.ics"',
+        },
+    )
 
 
 @router.delete("/{event_id}", status_code=204)

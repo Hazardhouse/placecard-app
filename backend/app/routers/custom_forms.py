@@ -1,8 +1,10 @@
+import logging
 import secrets
 from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -19,6 +21,8 @@ from app.schemas.custom_form import (
     FormInvitationResponse,
     FormSubmissionCreate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["custom_forms"])
 
@@ -208,5 +212,66 @@ def submit_form(share_token: str, data: FormSubmissionCreate, db: Session = Depe
     db.add(attendee)
     db.commit()
     db.refresh(attendee)
+
+    # GDPR-compliant marketing subscription. We only touch the
+    # email_subscribers table when the guest explicitly opts in — a
+    # silent non-tick is treated as "not consented", not as "actively
+    # declined". Cross-dialect upsert via raw SQL to handle Postgres
+    # (production) and SQLite (local dev) the same way.
+    if data.email and data.marketing_consent:
+        try:
+            dialect = db.bind.dialect.name
+            if dialect == "postgresql":
+                db.execute(
+                    text("""
+                        INSERT INTO email_subscribers (email, subscribed, source)
+                        VALUES (:email, TRUE, 'form_submission')
+                        ON CONFLICT (email) DO UPDATE
+                        SET subscribed = TRUE,
+                            source = 'form_submission'
+                    """),
+                    {"email": data.email.strip().lower()},
+                )
+            else:
+                db.execute(
+                    text("""
+                        INSERT INTO email_subscribers (email, subscribed, source)
+                        VALUES (:email, 1, 'form_submission')
+                        ON CONFLICT(email) DO UPDATE
+                        SET subscribed = 1,
+                            source = 'form_submission'
+                    """),
+                    {"email": data.email.strip().lower()},
+                )
+            db.commit()
+        except Exception:
+            # Subscription is non-fatal — never block the form submission
+            # over a marketing list write failure.
+            logger.exception(f"Failed to upsert email_subscribers for {data.email}")
+            db.rollback()
+
+    # Confirmation email to the guest with Add-to-Calendar buttons.
+    # Send-fail is non-fatal — we don't want a Resend hiccup to roll back
+    # an otherwise-successful form submission.
+    if data.email:
+        try:
+            from app.models.event import Event
+            from app.services.email import send_form_confirmation
+            event = db.query(Event).filter(Event.id == form.event_id).first()
+            if event:
+                send_form_confirmation(
+                    to_email=data.email,
+                    guest_name=data.name or "",
+                    event_name=event.name,
+                    organizer_name="Your Event Organizer",
+                    public_token=event.public_token,
+                    event_start=event.start_date,
+                    event_end=event.end_date,
+                    event_location=(event.venue or "") + ((" · " + event.location) if event.venue and event.location else (event.location or "")),
+                    event_description=event.description,
+                )
+        except Exception:
+            # Never block the response on email failure
+            pass
 
     return {"message": "Thank you! Your response has been submitted.", "attendee_id": attendee.id}

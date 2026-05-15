@@ -57,6 +57,11 @@ class FormSubmissionCreate(BaseModel):
     country: Optional[str] = None
     dietary_requirements: Optional[str] = None
     responses: Optional[Dict[str, str]] = None
+    # GDPR-compliant marketing opt-in. Default false (unticked) — the
+    # form-fill itself is the transactional consent; this is the
+    # additional opt-in for newsletter/marketing emails. Mirrors the
+    # `email_subscribers.subscribed` column.
+    marketing_consent: bool = False
 
 
 class FormInvitationCreate(BaseModel):

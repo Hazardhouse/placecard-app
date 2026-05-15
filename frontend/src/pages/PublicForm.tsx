@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { CustomFormPublic } from "../types";
+import logoSvg from "../assets/placecard-logo.svg";
 
 const COUNTRIES = [
   "United States", "United Kingdom", "Canada", "Australia", "Germany", "France",
@@ -34,6 +35,12 @@ export default function PublicForm() {
   // Custom field responses keyed by field ID
   const [responses, setResponses] = useState<Record<string, string>>({});
 
+  // Marketing opt-in. GDPR requires this to default to *unticked* — pre-ticked
+  // boxes don't constitute valid consent under Planet49 (CJEU C-673/17). The
+  // form-fill itself is the transactional consent for this event; this is the
+  // additional opt-in for newsletter / future event emails from PlaceCard.
+  const [marketingConsent, setMarketingConsent] = useState(false);
+
   useEffect(() => {
     if (!shareToken) return;
     api
@@ -65,6 +72,7 @@ export default function PublicForm() {
         country: country || null,
         dietary_requirements: dietary.trim() || null,
         responses: Object.keys(responses).length > 0 ? responses : null,
+        marketing_consent: marketingConsent,
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -88,7 +96,7 @@ export default function PublicForm() {
     return (
       <div className="public-form-page">
         <div className="public-form-card">
-          <div className="public-form-logo">Place<span>card</span></div>
+          <img src={logoSvg} alt="PlaceCard" className="public-form-logo-img" />
           <h1 className="public-form-error-title">{error || "Form not found"}</h1>
           <p style={{ color: "#6b7280", textAlign: "center" }}>
             This link may be invalid or the form may have been closed.
@@ -102,7 +110,7 @@ export default function PublicForm() {
     return (
       <div className="public-form-page">
         <div className="public-form-card public-form-success">
-          <div className="public-form-logo">Place<span>card</span></div>
+          <img src={logoSvg} alt="PlaceCard" className="public-form-logo-img" />
           <div className="public-form-success-icon">✓</div>
           <h1>Thank You!</h1>
           <p>Your details for <strong>{formData.event_name}</strong> have been submitted.</p>
@@ -115,7 +123,7 @@ export default function PublicForm() {
   return (
     <div className="public-form-page">
       <div className="public-form-card">
-        <div className="public-form-logo">Place<span>card</span></div>
+        <img src={logoSvg} alt="PlaceCard" className="public-form-logo-img" />
 
         <div className="public-form-event-header">
           <h1>{formData.event_name}</h1>
@@ -254,6 +262,23 @@ export default function PublicForm() {
           ))}
 
           {submitError && <p className="edit-user-error">{submitError}</p>}
+
+          {/* Marketing opt-in — GDPR-compliant, default unticked. Only shown
+              when the guest is providing an email (no email = nothing to
+              subscribe). */}
+          {email.trim() && (
+            <label className="public-form-marketing-optin">
+              <input
+                type="checkbox"
+                checked={marketingConsent}
+                onChange={e => setMarketingConsent(e.target.checked)}
+              />
+              <span>
+                Keep me in the loop on future events and PlaceCard updates.
+                You can unsubscribe at any time.
+              </span>
+            </label>
+          )}
 
           <button type="submit" className="btn btn-primary public-form-submit" disabled={submitting}>
             {submitting ? "Submitting..." : "Submit"}

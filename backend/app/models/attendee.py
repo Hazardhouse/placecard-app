@@ -22,6 +22,11 @@ class Attendee(Base):
     rsvp_status: Mapped[str] = mapped_column(String(20), default="pending")
     google_form_response_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Set when the guest clicks the unsubscribe link in any reminder email.
+    # Suppresses all future event reminder emails for this attendee
+    # without affecting their marketing subscription (which lives on
+    # `email_subscribers`).
+    email_unsubscribed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     event = relationship("Event", back_populates="attendees")
     seat_assignments = relationship("SeatAssignment", back_populates="attendee", cascade="all, delete-orphan")

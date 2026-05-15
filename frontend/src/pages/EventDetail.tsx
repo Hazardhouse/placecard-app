@@ -858,6 +858,8 @@ export default function EventDetail() {
           eventId={id}
           items={scheduleItems}
           onItemsChange={handleScheduleItemsChange}
+          eventStartDate={event?.start_date ?? null}
+          eventEndDate={event?.end_date ?? null}
         />
       )}
 

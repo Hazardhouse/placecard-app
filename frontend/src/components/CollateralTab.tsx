@@ -768,21 +768,21 @@ export default function CollateralTab({ scheduleItems, arrangements, tables, att
   const cardQuantity = attendees.length * (orderAllEvents ? seatingEventCount : 1);
 
   // Click handler shared by both "Go to Print" surfaces (header CTA + sticky
-  // FAB). When the event only has one seated sitting, there's no choice to
-  // make — drop straight into the print view with a reusable set. When
-  // there's more than one, open the confirmation popup.
+  // FAB). The popup ALWAYS opens so the user sees the rush + remove-branding
+  // upsells. When the event has only one seated sitting, the
+  // reusable/per-sitting radio is hidden — there's nothing to choose
+  // between, but rush printing and branding removal still apply.
   const openPrintFlow = () => {
-    if (seatingEventCount <= 1) {
-      setOrderAllEvents(false);
-      setActiveView("name-cards");
-      return;
-    }
     setPrintSetMode(orderAllEvents ? "per-event" : "reusable");
     setPrintPopupOpen(true);
   };
 
   const confirmPrintFlow = () => {
-    setOrderAllEvents(printSetMode === "per-event");
+    // When there's only one seated sitting the radio is hidden and the
+    // mode is forced to "reusable" — guarantee we don't carry a stale
+    // "per-event" from earlier popup interactions.
+    const effectiveMode = seatingEventCount > 1 ? printSetMode : "reusable";
+    setOrderAllEvents(effectiveMode === "per-event");
     setPrintPopupOpen(false);
     setActiveView("name-cards");
   };
@@ -1249,75 +1249,87 @@ export default function CollateralTab({ scheduleItems, arrangements, tables, att
         );
       })()}
 
-      {/* "How many sets?" confirmation popup — shown when the user has more
-          than one seated schedule item. */}
+      {/* Pre-print popup — always opens on "Go to Print" so the user sees
+          the rush + branding upsells. The reusable/per-sitting radio is
+          only shown when there's more than one seated sitting; otherwise
+          the choice is fixed to reusable. */}
       {printPopupOpen && (() => {
+        const multipleSittings = seatingEventCount > 1;
+        const effectiveMode = multipleSittings ? printSetMode : "reusable";
         const reusableTotal = attendees.length;
         const perEventTotal = attendees.length * seatingEventCount;
         const reusableTier = getPrintTier(reusableTotal);
         const perEventTier = getPrintTier(perEventTotal);
-        const total = printSetMode === "per-event" ? perEventTotal : reusableTotal;
-        const selectedTier = printSetMode === "per-event" ? perEventTier : reusableTier;
+        const total = effectiveMode === "per-event" ? perEventTotal : reusableTotal;
+        const selectedTier = effectiveMode === "per-event" ? perEventTier : reusableTier;
         return (
           <div className="pc-print-popup-layer" role="dialog" aria-modal="true">
             <div className="pc-print-popup-backdrop" onClick={() => setPrintPopupOpen(false)} />
             <div className="pc-print-popup">
-              <h2 className="pc-print-popup-title">How many sets of name cards?</h2>
+              <h2 className="pc-print-popup-title">
+                {multipleSittings ? "How many sets of name cards?" : "Print name cards"}
+              </h2>
               <p className="pc-print-popup-sub">
-                You have {seatingEventCount} seated sittings and {attendees.length} attendees.
+                {multipleSittings
+                  ? `You have ${seatingEventCount} seated sittings and ${attendees.length} attendees.`
+                  : `${attendees.length} attendee${attendees.length === 1 ? "" : "s"} — one set of cards.`}
               </p>
 
-              <label className={`pc-print-popup-option ${printSetMode === "reusable" ? "pc-print-popup-option-active" : ""}`}>
-                <input
-                  type="radio"
-                  name="print-set-mode"
-                  value="reusable"
-                  checked={printSetMode === "reusable"}
-                  onChange={() => setPrintSetMode("reusable")}
-                />
-                <div className="pc-print-popup-option-body">
-                  <div className="pc-print-popup-option-label">One Reusable Set</div>
-                  <div className="pc-print-popup-option-desc">
-                    A single set of cards your guests pick up once and carry with them through every sitting.
-                  </div>
-                  <div className="pc-print-popup-option-meta">
-                    <span className="pc-print-popup-option-count">{reusableTotal} cards</span>
-                    <span className="pc-print-popup-option-price">
-                      {reusableTier
-                        ? (reusableTotal < reusableTier.upTo
-                            ? `${formatPrice(reusableTier.retail)} · ${reusableTier.upTo}-card minimum`
-                            : formatPrice(reusableTier.retail))
-                        : "Custom quote — over 75 cards"}
-                    </span>
-                  </div>
-                </div>
-              </label>
+              {multipleSittings && (
+                <>
+                  <label className={`pc-print-popup-option ${printSetMode === "reusable" ? "pc-print-popup-option-active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="print-set-mode"
+                      value="reusable"
+                      checked={printSetMode === "reusable"}
+                      onChange={() => setPrintSetMode("reusable")}
+                    />
+                    <div className="pc-print-popup-option-body">
+                      <div className="pc-print-popup-option-label">One Reusable Set</div>
+                      <div className="pc-print-popup-option-desc">
+                        A single set of cards your guests pick up once and carry with them through every sitting.
+                      </div>
+                      <div className="pc-print-popup-option-meta">
+                        <span className="pc-print-popup-option-count">{reusableTotal} cards</span>
+                        <span className="pc-print-popup-option-price">
+                          {reusableTier
+                            ? (reusableTotal < reusableTier.upTo
+                                ? `${formatPrice(reusableTier.retail)} · ${reusableTier.upTo}-card minimum`
+                                : formatPrice(reusableTier.retail))
+                            : "Custom quote — over 75 cards"}
+                        </span>
+                      </div>
+                    </div>
+                  </label>
 
-              <label className={`pc-print-popup-option ${printSetMode === "per-event" ? "pc-print-popup-option-active" : ""}`}>
-                <input
-                  type="radio"
-                  name="print-set-mode"
-                  value="per-event"
-                  checked={printSetMode === "per-event"}
-                  onChange={() => setPrintSetMode("per-event")}
-                />
-                <div className="pc-print-popup-option-body">
-                  <div className="pc-print-popup-option-label">Per Sitting with Seating</div>
-                  <div className="pc-print-popup-option-desc">
-                    A unique set for each of the {seatingEventCount} seated sittings — pre-set on tables so guests find their spot every time.
-                  </div>
-                  <div className="pc-print-popup-option-meta">
-                    <span className="pc-print-popup-option-count">{perEventTotal} cards ({attendees.length} × {seatingEventCount})</span>
-                    <span className="pc-print-popup-option-price">
-                      {perEventTier
-                        ? (perEventTotal < perEventTier.upTo
-                            ? `${formatPrice(perEventTier.retail)} · ${perEventTier.upTo}-card minimum`
-                            : formatPrice(perEventTier.retail))
-                        : "Custom quote — over 75 cards"}
-                    </span>
-                  </div>
-                </div>
-              </label>
+                  <label className={`pc-print-popup-option ${printSetMode === "per-event" ? "pc-print-popup-option-active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="print-set-mode"
+                      value="per-event"
+                      checked={printSetMode === "per-event"}
+                      onChange={() => setPrintSetMode("per-event")}
+                    />
+                    <div className="pc-print-popup-option-body">
+                      <div className="pc-print-popup-option-label">Per Sitting with Seating</div>
+                      <div className="pc-print-popup-option-desc">
+                        A unique set for each of the {seatingEventCount} seated sittings — pre-set on tables so guests find their spot every time.
+                      </div>
+                      <div className="pc-print-popup-option-meta">
+                        <span className="pc-print-popup-option-count">{perEventTotal} cards ({attendees.length} × {seatingEventCount})</span>
+                        <span className="pc-print-popup-option-price">
+                          {perEventTier
+                            ? (perEventTotal < perEventTier.upTo
+                                ? `${formatPrice(perEventTier.retail)} · ${perEventTier.upTo}-card minimum`
+                                : formatPrice(perEventTier.retail))
+                            : "Custom quote — over 75 cards"}
+                        </span>
+                      </div>
+                    </div>
+                  </label>
+                </>
+              )}
 
               {selectedTier && (
                 <div className="pc-print-popup-addons">

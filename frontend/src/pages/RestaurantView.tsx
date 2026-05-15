@@ -1,7 +1,112 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import logoSvg from "../assets/placecard-logo.svg";
+
+
+// Render a scaled SVG floor plan that mirrors the SeatingBoard the organizer
+// arranged. Same coordinate space (pixels, top-left origin) — we just compute
+// the bounding box across all tables, add padding, and let SVG viewBox handle
+// the scale-to-fit.
+function FloorPlan({ tables }: { tables: SeatingTable[] }) {
+  const layout = useMemo(() => {
+    if (tables.length === 0) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const t of tables) {
+      minX = Math.min(minX, t.x_position);
+      minY = Math.min(minY, t.y_position);
+      maxX = Math.max(maxX, t.x_position + (t.width || 120));
+      maxY = Math.max(maxY, t.y_position + (t.height || 120));
+    }
+    const padding = 60;
+    const viewX = minX - padding;
+    const viewY = minY - padding;
+    const viewW = (maxX - minX) + padding * 2;
+    const viewH = (maxY - minY) + padding * 2;
+    return { viewX, viewY, viewW, viewH };
+  }, [tables]);
+
+  if (!layout) return null;
+
+  return (
+    <div className="rv-floor-plan-wrap">
+      <h3 className="rv-floor-plan-heading">Floor plan</h3>
+      <div className="rv-floor-plan">
+        <svg
+          viewBox={`${layout.viewX} ${layout.viewY} ${layout.viewW} ${layout.viewH}`}
+          preserveAspectRatio="xMidYMid meet"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          {tables.map(t => {
+            const seated = t.seats.filter(s => s.attendee_name).length;
+            const cap = t.capacity || 1;
+            const ratio = seated / cap;
+            const fill = ratio === 0
+              ? "#f8fafc"
+              : ratio < 1
+              ? "#eff6ff"
+              : "#dbeafe";
+            const cx = t.x_position + (t.width || 120) / 2;
+            const cy = t.y_position + (t.height || 120) / 2;
+            const transform = t.rotation ? `rotate(${t.rotation} ${cx} ${cy})` : undefined;
+            const shape = (t.shape || "round").toLowerCase();
+
+            return (
+              <g key={t.id} transform={transform}>
+                {shape === "round" || shape === "oval" ? (
+                  <ellipse
+                    cx={cx}
+                    cy={cy}
+                    rx={(t.width || 120) / 2}
+                    ry={(t.height || 120) / 2}
+                    fill={fill}
+                    stroke="#1b4fff"
+                    strokeWidth="2"
+                  />
+                ) : (
+                  <rect
+                    x={t.x_position}
+                    y={t.y_position}
+                    width={t.width || 120}
+                    height={t.height || 120}
+                    rx={shape === "chair-row" ? 8 : 10}
+                    fill={fill}
+                    stroke="#1b4fff"
+                    strokeWidth="2"
+                  />
+                )}
+                <text
+                  x={cx}
+                  y={cy - 4}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize="16"
+                  fontWeight="600"
+                  fill="#1a1a2e"
+                >
+                  {t.name}
+                </text>
+                <text
+                  x={cx}
+                  y={cy + 14}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize="12"
+                  fill="#6b7280"
+                >
+                  {seated} / {cap}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <p className="rv-floor-plan-hint">
+        The room as the organizer set it up. Tap a table card below for the guest list.
+      </p>
+    </div>
+  );
+}
 
 type Variant = "attendees" | "seating";
 
@@ -17,6 +122,11 @@ type SeatingTable = {
   shape: string | null;
   capacity: number;
   seats: SeatEntry[];
+  x_position: number;
+  y_position: number;
+  width: number;
+  height: number;
+  rotation: number;
 };
 
 type MealCount = { option: string; count: number };
@@ -221,6 +331,9 @@ export default function RestaurantView() {
                       </div>
                     ))}
                   </div>
+                )}
+                {current && current.tables.length > 0 && (
+                  <FloorPlan tables={current.tables} />
                 )}
                 {current && (
                   <div className="rv-tables-grid">

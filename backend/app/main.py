@@ -11,7 +11,8 @@ from app.config import settings
 from app.models import event, attendee, table, seating as seating_models, google_form, schedule as schedule_models  # noqa: F401 - register all models
 from app.models import notification as notification_models  # noqa: F401
 from app.models import custom_form as custom_form_models  # noqa: F401
-from app.routers import attendees, events, fourover, places, seating, tables, schedule, users, settings as settings_router, custom_forms, brand_colors, name_cards, restaurant_share, document_import
+from app.models import email_subscriber as email_subscriber_models  # noqa: F401
+from app.routers import attendees, events, fourover, places, seating, tables, schedule, users, settings as settings_router, custom_forms, brand_colors, name_cards, restaurant_share, document_import, unsubscribe
 
 logger = logging.getLogger(__name__)
 
@@ -22,18 +23,29 @@ logger = logging.getLogger(__name__)
 # 7b9dfe8 if needed).
 
 def _start_scheduler():
-    """Start the APScheduler background job for notification reminders."""
+    """Start the APScheduler background jobs for notification reminders
+    (SMS/WhatsApp via Twilio) and event reminder emails (Resend)."""
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         from app.services.notifications import check_and_send_reminders
+        from app.services.reminder_emails import check_and_send_event_reminder_emails
 
         scheduler = BackgroundScheduler()
-        scheduler.add_job(check_and_send_reminders, "interval", minutes=5, id="notification_check")
+        scheduler.add_job(
+            check_and_send_reminders, "interval", minutes=5,
+            id="notification_check",
+        )
+        # Reminder emails: hourly is plenty given the 12-hour and 24-hour
+        # windows the job uses, and the notification_logs dedupe.
+        scheduler.add_job(
+            check_and_send_event_reminder_emails, "interval", minutes=60,
+            id="reminder_email_check",
+        )
         scheduler.start()
-        logger.info("Notification scheduler started (checks every 5 minutes)")
+        logger.info("Schedulers started (SMS/WhatsApp every 5 min, reminder emails every 60 min)")
         return scheduler
     except ImportError:
-        logger.warning("APScheduler not installed — notification scheduler disabled. Run: pip install apscheduler")
+        logger.warning("APScheduler not installed — schedulers disabled. Run: pip install apscheduler")
         return None
 
 
@@ -83,6 +95,7 @@ app.include_router(brand_colors.router)
 app.include_router(name_cards.router)
 app.include_router(restaurant_share.router)
 app.include_router(document_import.router)
+app.include_router(unsubscribe.router)
 
 
 @app.get("/api/health")

@@ -78,6 +78,15 @@ class SeatingTable(BaseModel):
     shape: Optional[str]
     capacity: int
     seats: List[SeatEntry]
+    # Spatial layout — exposed so the public restaurant view can render
+    # a visual floor plan that mirrors the SeatingBoard the organizer
+    # arranged internally. All in the same coordinate space the
+    # SeatingBoard uses (pixels, top-left origin).
+    x_position: float = 0.0
+    y_position: float = 0.0
+    width: float = 120.0
+    height: float = 120.0
+    rotation: float = 0.0
 
 
 class MealCount(BaseModel):
@@ -349,6 +358,11 @@ def _build_seating_view(event: Event, db: Session, attendees: List[Attendee]) ->
                 shape=t.shape,
                 capacity=t.capacity,
                 seats=seats,
+                x_position=t.x_position,
+                y_position=t.y_position,
+                width=t.width,
+                height=t.height,
+                rotation=t.rotation,
             ))
             _ = table_by_id  # quiet lint
 

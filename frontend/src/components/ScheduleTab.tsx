@@ -30,6 +30,11 @@ interface Props {
   eventId: number;
   items: ScheduleItem[];
   onItemsChange: (items: ScheduleItem[]) => void;
+  // Event-level dates — when the event is single-day (start == end),
+  // new schedule items pre-fill their date so the organizer doesn't
+  // have to type it for every item.
+  eventStartDate?: string | null;
+  eventEndDate?: string | null;
 }
 
 function formatTime(dt: string | null) {
@@ -275,7 +280,17 @@ function parseProgram(text: string) {
   return items;
 }
 
-export default function ScheduleTab({ eventId, items, onItemsChange }: Props) {
+export default function ScheduleTab({ eventId, items, onItemsChange, eventStartDate, eventEndDate }: Props) {
+  // The event's date in YYYY-MM-DD form, only set when the event is
+  // a single-day event (start and end on the same day, or end is null).
+  const eventSingleDate = (() => {
+    if (!eventStartDate) return null;
+    const start = eventStartDate.slice(0, 10);
+    if (!eventEndDate || eventStartDate.slice(0, 10) === eventEndDate.slice(0, 10)) {
+      return start;
+    }
+    return null;
+  })();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -430,7 +445,13 @@ export default function ScheduleTab({ eventId, items, onItemsChange }: Props) {
   }, []);
 
   const openAdd = () => {
-    setForm({ ...EMPTY_FORM });
+    // Pre-fill the date with the event's date when it's a single-day
+    // event — saves the organizer from typing it for every item.
+    setForm({
+      ...EMPTY_FORM,
+      start_date: eventSingleDate ?? "",
+      end_date: eventSingleDate ?? "",
+    });
     setVenueName("");
     setNearbyVenues([]);
     setFilteredVenues([]);

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.auth import CurrentUser, get_current_user
 from app.database import get_db
 from app.models.attendee import Attendee
 from app.models.custom_form import CustomForm
@@ -18,9 +19,42 @@ from app.schemas.event import EventCreate, EventResponse, EventUpdate
 router = APIRouter(prefix="/api/events", tags=["events"])
 
 
+def get_user_event(
+    event_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Event:
+    """Resolve an event by ID and assert the caller owns it.
+
+    Returns 404 (not 403) for both missing-event and not-owner cases
+    so existence doesn't leak across user accounts. In dev with
+    `require_auth=False` the user is anonymous and the user_id filter
+    is skipped — every event is reachable, preserving local-dev
+    ergonomics. Production with `require_auth=True` enforces.
+
+    Used as a FastAPI dependency from child routers (attendees,
+    tables, schedule, seating, custom_forms) so they only need the
+    one-line `event: Event = Depends(get_user_event)` and the
+    ownership check is consistent in one place.
+    """
+    q = db.query(Event).filter(Event.id == event_id)
+    if not user.is_anonymous:
+        q = q.filter(Event.user_id == user.id)
+    event = q.first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return event
+
+
 @router.get("", response_model=List[EventResponse])
-def list_events(db: Session = Depends(get_db)):
-    events = db.query(Event).order_by(Event.created_at.desc()).all()
+def list_events(
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(Event).order_by(Event.created_at.desc())
+    if not user.is_anonymous:
+        q = q.filter(Event.user_id == user.id)
+    events = q.all()
     result = []
     for event in events:
         resp = EventResponse.model_validate(event)
@@ -30,8 +64,16 @@ def list_events(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=EventResponse, status_code=201)
-def create_event(data: EventCreate, db: Session = Depends(get_db)):
-    event = Event(**data.model_dump(), public_token=secrets.token_urlsafe(32))
+def create_event(
+    data: EventCreate,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    event = Event(
+        **data.model_dump(),
+        public_token=secrets.token_urlsafe(32),
+        user_id=None if user.is_anonymous else user.id,
+    )
     db.add(event)
     db.commit()
     db.refresh(event)
@@ -41,20 +83,18 @@ def create_event(data: EventCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{event_id}", response_model=EventResponse)
-def get_event(event_id: int, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+def get_event(event: Event = Depends(get_user_event)):
     resp = EventResponse.model_validate(event)
     resp.attendee_count = len(event.attendees)
     return resp
 
 
 @router.patch("/{event_id}", response_model=EventResponse)
-def update_event(event_id: int, data: EventUpdate, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+def update_event(
+    data: EventUpdate,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(event, key, value)
     db.commit()
@@ -146,26 +186,25 @@ def get_event_calendar(token: str, db: Session = Depends(get_db)) -> Response:
 
 
 @router.delete("/{event_id}", status_code=204)
-def delete_event(event_id: int, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+def delete_event(
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     db.delete(event)
     db.commit()
 
 
 @router.post("/{event_id}/duplicate", response_model=EventResponse, status_code=201)
-def duplicate_event(event_id: int, db: Session = Depends(get_db)):
+def duplicate_event(
+    source: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     """Deep-clone an event with all of its history: attendees, tables,
     schedule items (with meal_options), seating arrangements, seat
     assignments, and custom forms. Share tokens are intentionally NOT
     carried over — existing public links stay pointing at the original
     event until the organizer regenerates them on the copy.
     """
-    source = db.query(Event).filter(Event.id == event_id).first()
-    if not source:
-        raise HTTPException(status_code=404, detail="Event not found")
-
     # 1) New event metadata — strip tokens so old links don't leak
     new_event = Event(
         name=f"{source.name} (Copy)",
@@ -177,6 +216,7 @@ def duplicate_event(event_id: int, db: Session = Depends(get_db)):
         event_category=source.event_category,
         description=source.description,
         image_data=source.image_data,
+        user_id=source.user_id,
         # restaurant_share_token + seating_share_token are intentionally left None
         # Fresh public_token so the copy gets its own public URL
         public_token=secrets.token_urlsafe(32),

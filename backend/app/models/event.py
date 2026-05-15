@@ -11,6 +11,12 @@ class Event(Base):
     __tablename__ = "events"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    # Supabase auth.users.id (UUID). Stored as String(36) for cross-dialect
+    # portability — SQLite has no native UUID type. Nullable for now so
+    # the migration can land without breaking existing rows; backfill
+    # via the SQL in SOP-SECURITY-RUNBOOK §2, then a follow-up
+    # migration can tighten to NOT NULL.
+    user_id: Mapped[Optional[str]] = mapped_column(String(36), index=True, nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     start_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     end_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

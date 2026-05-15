@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.event import Event
 from app.models.seating import SeatAssignment, SeatingArrangement
+from app.routers.events import get_user_event
 from app.schemas.seating import (
     SeatAssignmentCreate,
     SeatAssignmentResponse,
@@ -18,13 +19,13 @@ router = APIRouter(prefix="/api/events/{event_id}/seating", tags=["seating"])
 
 
 @router.get("", response_model=List[SeatingArrangementResponse])
-def list_arrangements(event_id: int, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+def list_arrangements(
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     return (
         db.query(SeatingArrangement)
-        .filter(SeatingArrangement.event_id == event_id)
+        .filter(SeatingArrangement.event_id == event.id)
         .options(
             joinedload(SeatingArrangement.seat_assignments)
             .joinedload(SeatAssignment.attendee),
@@ -36,11 +37,12 @@ def list_arrangements(event_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=SeatingArrangementResponse, status_code=201)
-def create_arrangement(event_id: int, data: SeatingArrangementCreate, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    arrangement = SeatingArrangement(event_id=event_id, name=data.name)
+def create_arrangement(
+    data: SeatingArrangementCreate,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
+    arrangement = SeatingArrangement(event_id=event.id, name=data.name)
     db.add(arrangement)
     db.commit()
     db.refresh(arrangement)
@@ -48,10 +50,14 @@ def create_arrangement(event_id: int, data: SeatingArrangementCreate, db: Sessio
 
 
 @router.get("/{arrangement_id}", response_model=SeatingArrangementResponse)
-def get_arrangement(event_id: int, arrangement_id: int, db: Session = Depends(get_db)):
+def get_arrangement(
+    arrangement_id: int,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     arrangement = (
         db.query(SeatingArrangement)
-        .filter(SeatingArrangement.id == arrangement_id, SeatingArrangement.event_id == event_id)
+        .filter(SeatingArrangement.id == arrangement_id, SeatingArrangement.event_id == event.id)
         .options(
             joinedload(SeatingArrangement.seat_assignments)
             .joinedload(SeatAssignment.attendee),
@@ -67,10 +73,13 @@ def get_arrangement(event_id: int, arrangement_id: int, db: Session = Depends(ge
 
 @router.patch("/{arrangement_id}", response_model=SeatingArrangementResponse)
 def update_arrangement(
-    event_id: int, arrangement_id: int, data: SeatingArrangementUpdate, db: Session = Depends(get_db)
+    arrangement_id: int,
+    data: SeatingArrangementUpdate,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
 ):
     arrangement = db.query(SeatingArrangement).filter(
-        SeatingArrangement.id == arrangement_id, SeatingArrangement.event_id == event_id
+        SeatingArrangement.id == arrangement_id, SeatingArrangement.event_id == event.id
     ).first()
     if not arrangement:
         raise HTTPException(status_code=404, detail="Seating arrangement not found")
@@ -82,9 +91,13 @@ def update_arrangement(
 
 
 @router.delete("/{arrangement_id}", status_code=204)
-def delete_arrangement(event_id: int, arrangement_id: int, db: Session = Depends(get_db)):
+def delete_arrangement(
+    arrangement_id: int,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     arrangement = db.query(SeatingArrangement).filter(
-        SeatingArrangement.id == arrangement_id, SeatingArrangement.event_id == event_id
+        SeatingArrangement.id == arrangement_id, SeatingArrangement.event_id == event.id
     ).first()
     if not arrangement:
         raise HTTPException(status_code=404, detail="Seating arrangement not found")
@@ -94,10 +107,13 @@ def delete_arrangement(event_id: int, arrangement_id: int, db: Session = Depends
 
 @router.post("/{arrangement_id}/seats", response_model=SeatAssignmentResponse, status_code=201)
 def assign_seat(
-    event_id: int, arrangement_id: int, data: SeatAssignmentCreate, db: Session = Depends(get_db)
+    arrangement_id: int,
+    data: SeatAssignmentCreate,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
 ):
     arrangement = db.query(SeatingArrangement).filter(
-        SeatingArrangement.id == arrangement_id, SeatingArrangement.event_id == event_id
+        SeatingArrangement.id == arrangement_id, SeatingArrangement.event_id == event.id
     ).first()
     if not arrangement:
         raise HTTPException(status_code=404, detail="Seating arrangement not found")
@@ -122,7 +138,10 @@ def assign_seat(
 
 @router.delete("/{arrangement_id}/seats/{assignment_id}", status_code=204)
 def remove_seat(
-    event_id: int, arrangement_id: int, assignment_id: int, db: Session = Depends(get_db)
+    arrangement_id: int,
+    assignment_id: int,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
 ):
     assignment = db.query(SeatAssignment).filter(
         SeatAssignment.id == assignment_id, SeatAssignment.arrangement_id == arrangement_id

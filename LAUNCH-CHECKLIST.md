@@ -1,6 +1,6 @@
 # PlaceCard Launch Checklist
 
-Last updated: 2026-04-29
+Last updated: 2026-05-15
 
 This is the master list of work that needs to land **before** flipping
 placecard-events.app from a waitlist to live signups. It's the source of
@@ -52,9 +52,23 @@ order to do things in.
       local `.env` files (Supabase service key, JWT secret, Gemini,
       etc.) plus sets spend caps, scope restrictions, 2FA. **Required
       pre-deploy**.
-- [ ] **Run `SOP-SECURITY-RUNBOOK.md` §2 — User Data Protection Audit
+- [~] **Run `SOP-SECURITY-RUNBOOK.md` §2 — User Data Protection Audit
       — before any non-operator account is granted access.** Verifies
       JWT middleware, RLS, rate limiting, GDPR endpoints in place.
+      *Events-ownership slice landed 2026-05-15:* `events.user_id`
+      column added (migration `c1e8a7d2f5b9`), auth wired into the
+      events router via `get_user_event` dependency, cascaded into
+      attendees/tables/schedule/seating/custom_forms. **Production
+      activation requires three steps in order:**
+      1. `alembic upgrade head` on the prod backend
+      2. Run `supabase/migrations/20260515_003_backfill_events_user_id.sql`
+         in the Supabase SQL editor (assigns existing events to Dani's
+         UUID — otherwise they vanish from her view when auth engages)
+      3. Set `REQUIRE_AUTH=true` env var on Render + restart the service
+      *Still outstanding for §2:* settings/notifications router
+      audit, per-user scoping on `notification_settings`, RLS policies
+      on Supabase tables, and a follow-up migration to make
+      `events.user_id` NOT NULL once backfill is verified.
 - [ ] **Run `SOP-SECURITY-RUNBOOK.md` §3 — Final Pass — before
       marketing site flips off the waitlist.** Backups verified,
       monitoring active, incident response documented, git history
@@ -95,8 +109,24 @@ order to do things in.
       no key is wired. Frontend autocomplete (event location, schedule
       venue) is dead until this is set up. Costs are per-request — set
       a billing alert.
-- [ ] **Resend domain verification** for `placecard-events.app` — DNS
+- [x] **Resend domain verification** for `placecard-events.app` — DNS
       records (SPF, DKIM, DMARC). Mails will go to spam without these.
+      *(Done 2026-05-15.)*
+- [ ] **Custom SMTP swap on Supabase Auth.** Built-in Supabase mailer
+      is rate-limited (~3-4 emails/hr) and unreliable in prod — sign-up
+      confirmations weren't arriving. Configure custom SMTP in Supabase
+      Dashboard → Project Settings → Auth → SMTP Settings:
+      - Host `smtp.resend.com`, port `465`, user `resend`,
+        password = Resend API key scoped to "Sending access" only
+      - Sender: `PlaceCard <events@placecard-events.app>`
+      - Set the auth email rate limit (default 30/hr is fine for launch)
+- [ ] **Paste five email templates** into Supabase Dashboard → Auth →
+      Email Templates. Source files in
+      `01_Projects/PlaceCard/email-templates/` — confirm-signup,
+      magic-link, reset-password, invite-user, change-email. The
+      `change-email` template is new and won't appear in the dashboard
+      until you save it; Supabase falls back to its plain default for
+      Reauthentication, which is fine until that flow is wired.
 - [ ] **Gemini key on a project with billing enabled.** Free tier is
       heavily rate-limited; design generation fans out to 6 parallel
       calls, will hit limits fast.

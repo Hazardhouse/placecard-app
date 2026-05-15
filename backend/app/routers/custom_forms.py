@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.attendee import Attendee
 from app.models.custom_form import CustomForm, FormInvitation
 from app.models.event import Event
+from app.routers.events import get_user_event
 from app.schemas.custom_form import (
     CustomFormCreate,
     CustomFormPublicResponse,
@@ -30,21 +31,21 @@ router = APIRouter(tags=["custom_forms"])
 # ── Authenticated endpoints (admin) ──
 
 @router.get("/api/events/{event_id}/forms", response_model=List[CustomFormResponse])
-def list_forms(event_id: int, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    return db.query(CustomForm).filter(CustomForm.event_id == event_id).all()
+def list_forms(
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
+    return db.query(CustomForm).filter(CustomForm.event_id == event.id).all()
 
 
 @router.post("/api/events/{event_id}/forms", response_model=CustomFormResponse, status_code=201)
-def create_form(event_id: int, data: CustomFormCreate, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-
+def create_form(
+    data: CustomFormCreate,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     form = CustomForm(
-        event_id=event_id,
+        event_id=event.id,
         title=data.title,
         description=data.description,
         fields=[f.model_dump() for f in data.fields],
@@ -57,9 +58,13 @@ def create_form(event_id: int, data: CustomFormCreate, db: Session = Depends(get
 
 
 @router.get("/api/events/{event_id}/forms/{form_id}", response_model=CustomFormResponse)
-def get_form(event_id: int, form_id: int, db: Session = Depends(get_db)):
+def get_form(
+    form_id: int,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     form = db.query(CustomForm).filter(
-        CustomForm.id == form_id, CustomForm.event_id == event_id
+        CustomForm.id == form_id, CustomForm.event_id == event.id
     ).first()
     if not form:
         raise HTTPException(status_code=404, detail="Form not found")
@@ -67,9 +72,14 @@ def get_form(event_id: int, form_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/api/events/{event_id}/forms/{form_id}", response_model=CustomFormResponse)
-def update_form(event_id: int, form_id: int, data: CustomFormUpdate, db: Session = Depends(get_db)):
+def update_form(
+    form_id: int,
+    data: CustomFormUpdate,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     form = db.query(CustomForm).filter(
-        CustomForm.id == form_id, CustomForm.event_id == event_id
+        CustomForm.id == form_id, CustomForm.event_id == event.id
     ).first()
     if not form:
         raise HTTPException(status_code=404, detail="Form not found")
@@ -86,9 +96,13 @@ def update_form(event_id: int, form_id: int, data: CustomFormUpdate, db: Session
 
 
 @router.delete("/api/events/{event_id}/forms/{form_id}", status_code=204)
-def delete_form(event_id: int, form_id: int, db: Session = Depends(get_db)):
+def delete_form(
+    form_id: int,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     form = db.query(CustomForm).filter(
-        CustomForm.id == form_id, CustomForm.event_id == event_id
+        CustomForm.id == form_id, CustomForm.event_id == event.id
     ).first()
     if not form:
         raise HTTPException(status_code=404, detail="Form not found")
@@ -97,16 +111,17 @@ def delete_form(event_id: int, form_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/api/events/{event_id}/forms/{form_id}/send", response_model=List[FormInvitationResponse])
-def send_invitations(event_id: int, form_id: int, data: FormInvitationCreate, db: Session = Depends(get_db)):
+def send_invitations(
+    form_id: int,
+    data: FormInvitationCreate,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     form = db.query(CustomForm).filter(
-        CustomForm.id == form_id, CustomForm.event_id == event_id
+        CustomForm.id == form_id, CustomForm.event_id == event.id
     ).first()
     if not form:
         raise HTTPException(status_code=404, detail="Form not found")
-
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
 
     from app.services.email import send_form_invitation
 
@@ -153,9 +168,13 @@ def send_invitations(event_id: int, form_id: int, data: FormInvitationCreate, db
 
 
 @router.get("/api/events/{event_id}/forms/{form_id}/invitations", response_model=List[FormInvitationResponse])
-def list_invitations(event_id: int, form_id: int, db: Session = Depends(get_db)):
+def list_invitations(
+    form_id: int,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     form = db.query(CustomForm).filter(
-        CustomForm.id == form_id, CustomForm.event_id == event_id
+        CustomForm.id == form_id, CustomForm.event_id == event.id
     ).first()
     if not form:
         raise HTTPException(status_code=404, detail="Form not found")
@@ -255,7 +274,6 @@ def submit_form(share_token: str, data: FormSubmissionCreate, db: Session = Depe
     # an otherwise-successful form submission.
     if data.email:
         try:
-            from app.models.event import Event
             from app.services.email import send_form_confirmation
             event = db.query(Event).filter(Event.id == form.event_id).first()
             if event:

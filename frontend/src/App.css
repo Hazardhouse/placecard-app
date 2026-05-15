@@ -7523,24 +7523,31 @@ body.on-app-page .app-header::after {
   margin-bottom: 18px;
 }
 
-/* Footer row beneath the event-layout — map card on the left, right
-   half reserved for future content. Two equal columns on desktop,
-   stacked on mobile. */
+/* Footer row beneath the event-layout — map sits in a column that
+   tracks the sidebar's width above it (so the map is the same width
+   as the hero image card), with the right column reserved for
+   future content. Breakpoints mirror .event-layout exactly. */
 .event-footer-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 28px;
   margin-top: 32px;
 }
 .event-footer-col {
   min-width: 0;
 }
-@media (max-width: 720px) {
+/* Tablet: match the tighter sidebar from .event-layout. */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .event-footer-row {
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+/* Mobile: stack so the map gets full width, hide the placeholder. */
+@media (max-width: 640px) {
   .event-footer-row {
     grid-template-columns: 1fr;
   }
-  /* Hide the right placeholder column on mobile so we don't render
-     empty whitespace beneath the map. */
   .event-footer-col-right {
     display: none;
   }

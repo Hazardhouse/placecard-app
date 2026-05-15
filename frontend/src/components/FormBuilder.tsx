@@ -15,14 +15,18 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
 interface Props {
   eventId: number;
   eventName: string;
+  eventDescription?: string | null;
   existingForm?: CustomForm | null;
   onSaved: (form: CustomForm) => void;
   onCancel: () => void;
 }
 
-export default function FormBuilder({ eventId, eventName, existingForm, onSaved, onCancel }: Props) {
+export default function FormBuilder({ eventId, eventName, eventDescription, existingForm, onSaved, onCancel }: Props) {
   const [title, setTitle] = useState(existingForm?.title || `${eventName} — Guest Details`);
-  const [description, setDescription] = useState(existingForm?.description || "");
+  // Default the description to whatever the user wrote on the event itself
+  // when there's no existing form yet. If they're editing an existing form,
+  // keep whatever they previously saved.
+  const [description, setDescription] = useState(existingForm?.description || eventDescription || "");
   const [fields, setFields] = useState<CustomFormField[]>(existingForm?.fields || []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

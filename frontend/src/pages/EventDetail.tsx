@@ -757,15 +757,20 @@ export default function EventDetail() {
 
       {activeTab === "attendees" && (
         <>
-          {attendees.length > 0 && (
+          {/* Show the action banner whenever there are attendees OR a
+              form exists — covers the "form created but no attendees
+              yet" gap that previously left the page empty. */}
+          {(attendees.length > 0 || eventForm) && (
             <div className="attendee-form-banner">
-              <input
-                type="text"
-                className="attendee-banner-search"
-                placeholder="Search by name, country..."
-                value={attendeeSearch}
-                onChange={e => setAttendeeSearch(e.target.value)}
-              />
+              {attendees.length > 0 && (
+                <input
+                  type="text"
+                  className="attendee-banner-search"
+                  placeholder="Search by name, country..."
+                  value={attendeeSearch}
+                  onChange={e => setAttendeeSearch(e.target.value)}
+                />
+              )}
               {eventForm && (
                 <>
                   <button className="attendee-form-banner-btn" onClick={() => setShowFormSend(true)}>
@@ -778,16 +783,20 @@ export default function EventDetail() {
                   </button>
                 </>
               )}
-              <button className="attendee-form-banner-btn" onClick={() => setShowRestaurantShare("attendees")}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="18" cy="5" r="3"/>
-                  <circle cx="6" cy="12" r="3"/>
-                  <circle cx="18" cy="19" r="3"/>
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                </svg>
-                Share Attendee List
-              </button>
+              {/* Share Attendee List only makes sense once there are
+                  attendees to share. */}
+              {attendees.length > 0 && (
+                <button className="attendee-form-banner-btn" onClick={() => setShowRestaurantShare("attendees")}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="18" cy="5" r="3"/>
+                    <circle cx="6" cy="12" r="3"/>
+                    <circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                  </svg>
+                  Share Attendee List
+                </button>
+              )}
             </div>
           )}
 
@@ -810,6 +819,7 @@ export default function EventDetail() {
                 <FormBuilder
                   eventId={id}
                   eventName={event.name}
+                  eventDescription={event.description}
                   existingForm={eventForm}
                   onSaved={(form) => {
                     setEventForm(form);

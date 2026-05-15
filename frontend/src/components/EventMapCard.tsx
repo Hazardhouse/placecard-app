@@ -54,8 +54,14 @@ export default function EventMapCard({ venue, location, width = 600, height = 30
         />
       </a>
       <div className="event-map-meta">
-        {venue && <div className="event-map-venue">{venue}</div>}
-        {location && <div className="event-map-address">{location}</div>}
+        {/* Venue + address on one line, mirroring the event meta line above:
+            "Venue Name · Address". Falls back to just venue or just address
+            when only one is set. */}
+        <div className="event-map-where">
+          {venue}
+          {venue && location && " · "}
+          {location}
+        </div>
         <a
           href={googleMapsUrl}
           target="_blank"

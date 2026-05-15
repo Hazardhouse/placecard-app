@@ -1,12 +1,13 @@
 """
 Google Places API proxy — keeps the API key server-side.
-Provides location autocomplete and nearby venue search.
+Provides location autocomplete, nearby venue search, and static map images.
 """
 
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 
 from app.config import settings
 
@@ -102,3 +103,49 @@ async def nearby_venues(
         for r in nearby_data.get("results", [])[:15]
     ]
     return {"results": results}
+
+
+@router.get("/static-map")
+async def static_map(
+    q: str = Query(..., min_length=2, description="Address / venue to render"),
+    width: int = Query(600, ge=100, le=1280),
+    height: int = Query(300, ge=100, le=720),
+    zoom: int = Query(15, ge=1, le=21),
+):
+    """Proxy a Google Static Maps PNG for the given query.
+
+    Keeps the API key server-side. Browser caches the response for 24h
+    via Cache-Control so a typical page view only hits Google once per
+    venue per day. Returns 503 when the key isn't configured so the
+    frontend can hide the map card gracefully.
+    """
+    if not settings.google_places_api_key:
+        raise HTTPException(status_code=503, detail="Maps not configured")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://maps.googleapis.com/maps/api/staticmap",
+            params={
+                "center": q,
+                "zoom": str(zoom),
+                "size": f"{width}x{height}",
+                "scale": "2",  # retina-friendly
+                "maptype": "roadmap",
+                "markers": f"color:0x1b4fff|{q}",
+                "key": settings.google_places_api_key,
+            },
+            timeout=15,
+        )
+
+    # Google returns 200 + an image even when the address can't be
+    # geocoded (renders a generic world map). Pass through whatever it
+    # gave us — falling back to a hard error here would over-aggressively
+    # hide maps for venues with quirky spellings.
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Map service unavailable")
+
+    return Response(
+        content=resp.content,
+        media_type=resp.headers.get("content-type", "image/png"),
+        headers={"Cache-Control": "public, max-age=86400"},
+    )

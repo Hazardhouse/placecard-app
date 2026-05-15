@@ -7523,6 +7523,74 @@ body.on-app-page .app-header::after {
   margin-bottom: 18px;
 }
 
+/* Footer row beneath the event-layout — map card on the left, right
+   half reserved for future content. Two equal columns on desktop,
+   stacked on mobile. */
+.event-footer-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  margin-top: 32px;
+}
+.event-footer-col {
+  min-width: 0;
+}
+@media (max-width: 720px) {
+  .event-footer-row {
+    grid-template-columns: 1fr;
+  }
+  /* Hide the right placeholder column on mobile so we don't render
+     empty whitespace beneath the map. */
+  .event-footer-col-right {
+    display: none;
+  }
+}
+
+/* ── EventMapCard — used in event detail footer + public event page ── */
+.event-map-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.event-map-img-link {
+  display: block;
+  line-height: 0;
+}
+.event-map-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #f3f4f6;
+}
+.event-map-meta {
+  padding: 14px 16px;
+}
+.event-map-venue {
+  font-weight: 600;
+  color: #1a1a2e;
+  font-size: 0.95rem;
+  margin-bottom: 2px;
+}
+.event-map-address {
+  color: #4b5563;
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+.event-map-open-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary, #1b4fff);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.event-map-open-link:hover {
+  text-decoration: underline;
+}
+
 /* ── Event detail layout: 2-column on desktop, stacked on mobile ── */
 .event-layout {
   display: grid;

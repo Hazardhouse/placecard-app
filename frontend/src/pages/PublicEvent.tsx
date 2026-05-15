@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import logoSvg from "../assets/placecard-logo.svg";
+import EventMapCard from "../components/EventMapCard";
 import type { Event } from "../types";
 
 function formatDateRange(start: string | null, end: string | null): string {
@@ -110,6 +111,10 @@ export default function PublicEvent() {
 
         {event.description && (
           <p className="public-event-description">{event.description}</p>
+        )}
+
+        {(event.venue || event.location) && (
+          <EventMapCard venue={event.venue} location={event.location} />
         )}
 
         <footer className="public-event-footer">

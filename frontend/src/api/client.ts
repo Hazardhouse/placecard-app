@@ -244,6 +244,11 @@ export const api = {
     request<{ results: { place_id: string; name: string; address: string; rating?: number }[] }>(
       `/places/nearby?location=${encodeURIComponent(location)}`,
     ),
+  // Static map proxy URL — used directly as <img src>. No request() call
+  // needed since the response is a PNG; the proxy keeps the API key
+  // server-side and adds 24h cache headers.
+  placesStaticMapUrl: (q: string, width = 600, height = 300) =>
+    `${API_BASE}/places/static-map?q=${encodeURIComponent(q)}&width=${width}&height=${height}`,
 
   getMessageUsage: () =>
     request<{ sms_used: number; sms_limit: number; whatsapp_used: number; whatsapp_limit: number; plan: string }>(

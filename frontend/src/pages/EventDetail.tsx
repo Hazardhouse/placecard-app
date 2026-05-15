@@ -5,6 +5,7 @@ import type { Event, Attendee, Table, SeatingArrangement, CustomForm } from "../
 import AttendeeList from "../components/AttendeeList";
 import SeatingBoard from "../components/SeatingBoard";
 import ScheduleTab from "../components/ScheduleTab";
+import EventMapCard from "../components/EventMapCard";
 import CollateralTab, { type DesignsByType, type SelectedDesignByType } from "../components/CollateralTab";
 import FormBuilder from "../components/FormBuilder";
 import FormSendDialog from "../components/FormSendDialog";
@@ -1066,6 +1067,19 @@ export default function EventDetail() {
       )}
         </div>
       </div>
+
+      {/* Footer row — map on the left, right half reserved for future
+          content (event meta, share links, etc). Hidden entirely when
+          neither venue nor location is set. */}
+      {(event.venue || event.location) && (
+        <div className="event-footer-row">
+          <div className="event-footer-col event-footer-col-left">
+            <EventMapCard venue={event.venue} location={event.location} />
+          </div>
+          <div className="event-footer-col event-footer-col-right" />
+        </div>
+      )}
+
       {/* ── Attendee Edit Drawer ── */}
       {editDrawerOpen && <div className="drawer-backdrop" onClick={closeEditDrawer} />}
       <div className={`drawer ${editDrawerOpen ? "drawer-open" : ""}`}>

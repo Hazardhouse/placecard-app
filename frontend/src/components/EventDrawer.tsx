@@ -143,7 +143,11 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
     }
     locationTimer.current = setTimeout(async () => {
       try {
-        const data = await api.placesAutocomplete(value, "geocode");
+        // No type filter — let Google return everything (establishments,
+        // addresses, cities) so the user sees venue names + addresses
+        // mixed in. Previously gated on "geocode" which excluded named
+        // venues like restaurants or hotels.
+        const data = await api.placesAutocomplete(value);
         setLocationSuggestions(data.predictions);
         setShowLocationSuggestions(data.predictions.length > 0);
       } catch {
@@ -154,7 +158,16 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
   }, []);
 
   const selectLocation = useCallback((p: Prediction) => {
-    setLocation(p.description);
+    // For establishments, Google splits the prediction into a venue
+    // name (main_text) and an address (secondary_text). When the venue
+    // name is set AND the user hasn't typed their own venue name yet,
+    // auto-fill it so a single click captures both pieces.
+    if (p.main_text && p.secondary_text) {
+      setLocation(p.secondary_text);
+      setVenue(prev => prev || p.main_text);
+    } else {
+      setLocation(p.description);
+    }
     setShowLocationSuggestions(false);
     setLocationSuggestions([]);
   }, []);

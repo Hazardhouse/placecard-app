@@ -13,6 +13,11 @@ class EventCreate(BaseModel):
     venue_type: Optional[str] = None
     event_category: Optional[str] = None
     description: Optional[str] = None
+    # Hero image data URL — frontend resizes/compresses to a JPEG data URL
+    # before submit. Without this field declared, Pydantic silently dropped
+    # the image on POST while PATCH (which uses EventUpdate) saved it, so
+    # uploads during Create Event never made it to the next screen.
+    image_data: Optional[str] = None
 
 
 class EventUpdate(BaseModel):

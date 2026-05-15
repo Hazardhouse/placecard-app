@@ -23,3 +23,6 @@ PyJWT==2.9.0
 # Rate limiting middleware. Defaults are conservative; override
 # per-route with @limiter.limit("X/minute") as needed (SOP §1.4).
 slowapi==0.1.9
+# Resend transactional email SDK — used by services/email.py to send
+# form invitations and restaurant-share links.
+resend==2.4.0

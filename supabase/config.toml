@@ -6,4 +6,4 @@ port = 54321
 port = 54322
 
 [auth]
-site_url = "https://placecard.com"
+site_url = "https://app.placecard-events.app"

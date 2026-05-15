@@ -61,7 +61,7 @@ export default function LoginPage() {
                 type="text"
                 value={name}
                 onChange={e => setName(e.target.value)}
-                placeholder="Dani Bradford"
+                placeholder="Name Here"
                 required
               />
             </div>

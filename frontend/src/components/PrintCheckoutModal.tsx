@@ -12,7 +12,7 @@
  * webhook fires the operator fulfillment email with design files +
  * attendee CSV attached.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { api } from "../api/client";
@@ -43,30 +43,76 @@ interface Props {
   contentType: ContentType;
   design: PrintCheckoutDesign;
   attendees: PrintCheckoutAttendee[];
-  // Carried over from the upstream "Go to Print" popup, where the
-  // user ticked these add-ons. Server-side pricing adds them to the
-  // PaymentIntent amount, so the customer pays the displayed total.
-  rush?: boolean;
-  removeBranding?: boolean;
+  // Initial values for the addon ticks shown on the first step. The
+  // user can still toggle them inside the modal; this prop just seeds.
+  initialRush?: boolean;
+  initialRemoveBranding?: boolean;
   onClose: () => void;
 }
 
-type Step = "address" | "payment" | "success";
+type Step = "options" | "address" | "payment" | "success";
+
+
+function formatCurrency(amount: number, currency: string): string {
+  const symbol = currency.toUpperCase() === "GBP" ? "£" : "$";
+  return `${symbol}${amount.toFixed(2)}`;
+}
 
 export default function PrintCheckoutModal({
   eventId,
   contentType,
   design,
   attendees,
-  rush = false,
-  removeBranding = false,
+  initialRush = false,
+  initialRemoveBranding = false,
   onClose,
 }: Props) {
-  const [step, setStep] = useState<Step>("address");
+  const [step, setStep] = useState<Step>("options");
+  const [rush, setRush] = useState(initialRush);
+  const [removeBranding, setRemoveBranding] = useState(initialRemoveBranding);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<number | null>(null);
   const [totalCents, setTotalCents] = useState(0);
   const [currency, setCurrency] = useState("gbp");
+
+  // Preview quote for the options step. Refetched whenever the addon
+  // ticks change — the server is the authoritative pricer. Country
+  // defaults to GB (UK) since shipping isn't known yet; final pricing
+  // is recomputed on the create-intent call once the address is in.
+  const [optionsQuote, setOptionsQuote] = useState<{
+    currency: string;
+    base_amount: number;
+    rush_amount: number;
+    remove_branding_amount: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (step !== "options") return;
+    let cancelled = false;
+    api.getPrintQuote({
+      country: "GB",
+      content_type: contentType,
+      quantity: attendees.length || 1,
+      rush,
+      remove_branding: removeBranding,
+    })
+      .then(q => {
+        if (!cancelled) {
+          setOptionsQuote({
+            currency: q.currency,
+            base_amount: q.base_amount,
+            rush_amount: q.rush_amount,
+            remove_branding_amount: q.remove_branding_amount,
+          });
+        }
+      })
+      .catch(() => {
+        // Non-fatal — the options preview just shows blanks if the
+        // quote endpoint is unreachable. Real pricing is recomputed
+        // server-side on Continue.
+      });
+    return () => { cancelled = true; };
+  }, [step, rush, removeBranding, attendees.length, contentType]);
 
   // Shipping fields. UK default per the 2026-05-16 launch decision.
   const [name, setName] = useState("");
@@ -128,6 +174,7 @@ export default function PrintCheckoutModal({
       <div className="order-modal">
         <div className="order-modal-header">
           <h3>
+            {step === "options" && "Print options"}
             {step === "address" && "Shipping address"}
             {step === "payment" && "Payment"}
             {step === "success" && "Order placed"}
@@ -147,6 +194,79 @@ export default function PrintCheckoutModal({
               {attendees.length} card{attendees.length === 1 ? "" : "s"}
             </div>
           </div>
+
+          {step === "options" && (
+            <div className="order-field">
+              <label
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 12, padding: 14,
+                  border: "1px solid var(--border)", borderRadius: 8, cursor: "pointer",
+                  marginBottom: 10,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={rush}
+                  onChange={e => setRush(e.target.checked)}
+                  style={{ marginTop: 3, width: 18, height: 18 }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 2 }}>Need them tomorrow?</div>
+                  <div style={{ fontSize: 13, color: "#64748b" }}>Next-business-day rush printing.</div>
+                </div>
+                <div style={{ fontWeight: 600, color: "#1b4fff", whiteSpace: "nowrap" }}>
+                  {optionsQuote ? `+${formatCurrency(optionsQuote.rush_amount, optionsQuote.currency)}` : "+…"}
+                </div>
+              </label>
+              <label
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 12, padding: 14,
+                  border: "1px solid var(--border)", borderRadius: 8, cursor: "pointer",
+                  marginBottom: 16,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={removeBranding}
+                  onChange={e => setRemoveBranding(e.target.checked)}
+                  style={{ marginTop: 3, width: 18, height: 18 }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 2 }}>Remove PlaceCard branding</div>
+                  <div style={{ fontSize: 13, color: "#64748b" }}>
+                    Strip the "Hosted via PlaceCard" mark from the print.
+                  </div>
+                </div>
+                <div style={{ fontWeight: 600, color: "#1b4fff", whiteSpace: "nowrap" }}>
+                  {optionsQuote ? `+${formatCurrency(optionsQuote.remove_branding_amount, optionsQuote.currency)}` : "+…"}
+                </div>
+              </label>
+              {optionsQuote && (
+                <div
+                  style={{
+                    background: "#f8fafc", borderRadius: 8, padding: 12,
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    fontSize: 14,
+                  }}
+                >
+                  <span>
+                    {attendees.length} card{attendees.length === 1 ? "" : "s"} · subtotal
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                      Shipping calculated at the next step
+                    </div>
+                  </span>
+                  <strong style={{ fontSize: 18 }}>
+                    {formatCurrency(
+                      optionsQuote.base_amount
+                      + (rush ? optionsQuote.rush_amount : 0)
+                      + (removeBranding ? optionsQuote.remove_branding_amount : 0),
+                      optionsQuote.currency,
+                    )}
+                  </strong>
+                </div>
+              )}
+            </div>
+          )}
 
           {step === "address" && (
             <form id="pcm-address-form" onSubmit={handleSubmitAddress}>
@@ -272,9 +392,22 @@ export default function PrintCheckoutModal({
           )}
         </div>
 
-        {step === "address" && (
+        {step === "options" && (
           <div className="order-modal-footer">
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setStep("address")}
+            >
+              Continue →
+            </button>
+          </div>
+        )}
+
+        {step === "address" && (
+          <div className="order-modal-footer">
+            <button type="button" className="btn" onClick={() => setStep("options")}>← Back</button>
             <button
               type="submit"
               form="pcm-address-form"

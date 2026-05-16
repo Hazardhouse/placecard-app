@@ -463,13 +463,15 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
   const cardQuantity = attendees.length * (orderAllEvents ? seatingEventCount : 1);
 
   // Click handler shared by both "Go to Print" surfaces (header CTA + sticky
-  // FAB). The popup ALWAYS opens so the user sees the rush + remove-branding
-  // upsells. When the event has only one seated sitting, the
-  // reusable/per-sitting radio is hidden — there's nothing to choose
-  // between, but rush printing and branding removal still apply.
+  // FAB). Opens PrintCheckoutModal directly at its "options" step — the
+  // rush + remove-branding ticks now live INSIDE the checkout modal so
+  // there's no intermediate popup-to-modal handoff.
   const openPrintFlow = () => {
-    setPrintSetMode(orderAllEvents ? "per-event" : "reusable");
-    setPrintPopupOpen(true);
+    const selectedIdx = selectedDesignByType[contentType];
+    if (selectedIdx === null) return;
+    const aiDesign = designsByType[contentType][selectedIdx];
+    if (!aiDesign) return;
+    setCheckoutAiDesign(aiDesign);
   };
 
   const confirmPrintFlow = () => {
@@ -677,8 +679,8 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
                     dietary: a.dietary_requirements ?? null,
                   }))
             }
-            rush={printRushSelected}
-            removeBranding={printRemoveBranding}
+            initialRush={printRushSelected}
+            initialRemoveBranding={printRemoveBranding}
             onClose={() => setCheckoutAiDesign(null)}
           />
         )}

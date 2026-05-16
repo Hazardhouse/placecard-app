@@ -674,8 +674,6 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
   // Derived views for the currently-active chip
   const generatedDesigns = designsByType[contentType];
   const selectedDesign = selectedDesignByType[contentType];
-  const setGeneratedDesigns = (designs: Design[]) =>
-    setDesignsByType(prev => ({ ...prev, [contentType]: designs }));
   const setSelectedDesign = (updater: number | null | ((prev: number | null) => number | null)) =>
     setSelectedDesignByType(prev => ({
       ...prev,

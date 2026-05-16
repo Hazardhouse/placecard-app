@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_email: str = "events@placecard-events.app"
     gemini_api_key: str = ""
+    # Stripe — print-order checkout. Test keys (sk_test_..., whsec_...)
+    # are fine for the build; flip to live keys at launch deliberately.
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    # Fulfillment notifications land here. Manual print workflow until
+    # automated print-vendor integration arrives.
+    fulfillment_email: str = "ahoy@hazardhouse.co"
     # Comma-separated list of origins allowed by CORS. Local dev defaults
     # to the Vite ports; production overrides via env var to the deployed
     # frontend domain(s) (e.g. "https://app.placecard-events.app").

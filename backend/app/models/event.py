@@ -42,3 +42,4 @@ class Event(Base):
     schedule_items = relationship("ScheduleItem", back_populates="event", cascade="all, delete-orphan")
     custom_forms = relationship("CustomForm", back_populates="event", cascade="all, delete-orphan")
     designs = relationship("Design", back_populates="event", cascade="all, delete-orphan")
+    print_orders = relationship("PrintOrder", back_populates="event", cascade="all, delete-orphan")

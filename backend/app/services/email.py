@@ -575,3 +575,191 @@ def send_event_reminder_day_before(
         public_token, event_start, event_end, event_location, event_description,
         kind="day_before",
     )
+
+
+# ── Print-order fulfillment ─────────────────────────────────────────────
+
+
+def _extension_for_mime(mime: str | None) -> str:
+    """Best-effort filename extension for an image MIME type."""
+    if not mime:
+        return "png"
+    mime = mime.lower()
+    if "jpeg" in mime or "jpg" in mime:
+        return "jpg"
+    if "gif" in mime:
+        return "gif"
+    if "webp" in mime:
+        return "webp"
+    return "png"
+
+
+def _print_order_attachments(order) -> list[dict]:
+    """Build the Resend attachments payload for a print order:
+    one entry per design view (Front, Back, etc.) plus an attendees CSV.
+
+    `order` is the PrintOrder ORM row; we read the frozen snapshots
+    off it so the email reflects exactly what was paid for.
+    """
+    import base64
+    import csv
+    import io
+
+    attachments: list[dict] = []
+
+    # Design views — multi-view designs (Front + Back) get one
+    # attachment per view; single-view designs get one PNG.
+    if order.design_views_json:
+        for i, view in enumerate(order.design_views_json):
+            label = (view.get("label") or f"view-{i + 1}").lower().replace(" ", "-")
+            ext = _extension_for_mime(view.get("mime_type"))
+            attachments.append({
+                "filename": f"design-{order.id}-{label}.{ext}",
+                "content": view["image_b64"],
+            })
+    else:
+        ext = _extension_for_mime(order.design_mime_type)
+        attachments.append({
+            "filename": f"design-{order.id}.{ext}",
+            "content": order.design_image_b64,
+        })
+
+    # Attendees CSV — what to actually print on the cards.
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Name", "Table", "Dietary"])
+    for a in (order.attendees_json or []):
+        writer.writerow([
+            a.get("name", ""),
+            a.get("table_name", ""),
+            a.get("dietary", "") or "",
+        ])
+    csv_b64 = base64.b64encode(buf.getvalue().encode("utf-8")).decode("ascii")
+    attachments.append({
+        "filename": f"attendees-order-{order.id}.csv",
+        "content": csv_b64,
+    })
+
+    return attachments
+
+
+def _money_str(amount_cents: int, currency: str) -> str:
+    symbol = {"USD": "$", "GBP": "£"}.get(currency.upper(), currency.upper() + " ")
+    return f"{symbol}{amount_cents / 100:.2f}"
+
+
+def send_print_order_fulfillment(order) -> bool:
+    """Send the operator notification email for a paid print order.
+
+    Includes order details inline + the chosen design files + an
+    attendees CSV as attachments — everything you need to build the
+    print-ready file and hand off to the local printer.
+
+    Returns True on a successful send; False otherwise (logs internally).
+    Caller should never let a False here roll back the order's 'paid'
+    state — the payment has already cleared at Stripe.
+    """
+    try:
+        import resend
+
+        resend.api_key = settings.resend_api_key
+        if not resend.api_key:
+            logger.warning("Resend API key not configured — skipping fulfillment email")
+            return False
+        if not settings.fulfillment_email:
+            logger.warning("FULFILLMENT_EMAIL not set — skipping fulfillment email")
+            return False
+
+        total = _money_str(order.total_amount_cents, order.currency)
+        base = _money_str(order.base_amount_cents, order.currency)
+        shipping = _money_str(order.shipping_amount_cents, order.currency)
+        rush_line = (
+            f"<tr><td style='padding:4px 0;'>Rush (next-business-day)</td>"
+            f"<td style='padding:4px 0;text-align:right;'>{_money_str(order.rush_amount_cents, order.currency)}</td></tr>"
+            if order.rush else ""
+        )
+        branding_line = (
+            f"<tr><td style='padding:4px 0;'>Remove PlaceCard branding</td>"
+            f"<td style='padding:4px 0;text-align:right;'>{_money_str(order.remove_branding_amount_cents, order.currency)}</td></tr>"
+            if order.remove_branding else ""
+        )
+
+        address_lines = [order.shipping_address1]
+        if order.shipping_address2:
+            address_lines.append(order.shipping_address2)
+        address_lines.append(
+            ", ".join([p for p in (order.shipping_city, order.shipping_state, order.shipping_zip) if p])
+        )
+        address_lines.append({"US": "United States", "GB": "United Kingdom"}.get(order.shipping_country, order.shipping_country))
+        address_html = "<br>".join(address_lines)
+
+        attendee_count = len(order.attendees_json or [])
+
+        html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>New PlaceCard print order</title></head>
+<body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fa;padding:32px 0;">
+    <tr><td align="center">
+      <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;">
+        <tr><td>
+          <h1 style="margin:0 0 6px;font-size:22px;color:#0f172a;">New print order #{order.id}</h1>
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;">{order.quantity} × {order.content_type} · {attendee_count} attendees · {total}</p>
+
+          <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Print specs</h2>
+          <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
+            <tr><td style="padding:4px 0;">Type</td><td style="padding:4px 0;text-align:right;">{order.content_type}</td></tr>
+            <tr><td style="padding:4px 0;">Quantity</td><td style="padding:4px 0;text-align:right;">{order.quantity} (charged at tier of {order.quantity_tier})</td></tr>
+            <tr><td style="padding:4px 0;">Paper</td><td style="padding:4px 0;text-align:right;">{order.paper_stock}</td></tr>
+            <tr><td style="padding:4px 0;">Finish</td><td style="padding:4px 0;text-align:right;">{order.finish}</td></tr>
+            <tr><td style="padding:4px 0;">Colour</td><td style="padding:4px 0;text-align:right;">{order.color_spec}</td></tr>
+            <tr><td style="padding:4px 0;">Turnaround</td><td style="padding:4px 0;text-align:right;">{order.turnaround_days} business days{' (RUSH)' if order.rush else ''}</td></tr>
+            <tr><td style="padding:4px 0;">Branding removed?</td><td style="padding:4px 0;text-align:right;">{'Yes' if order.remove_branding else 'No'}</td></tr>
+          </table>
+
+          <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Pricing</h2>
+          <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
+            <tr><td style="padding:4px 0;">Cards (×{order.quantity_tier})</td><td style="padding:4px 0;text-align:right;">{base}</td></tr>
+            {rush_line}
+            {branding_line}
+            <tr><td style="padding:4px 0;">Shipping ({order.shipping_country})</td><td style="padding:4px 0;text-align:right;">{shipping}</td></tr>
+            <tr><td style="padding:8px 0 4px;border-top:1px solid #e2e8f0;font-weight:600;">Total</td><td style="padding:8px 0 4px;border-top:1px solid #e2e8f0;text-align:right;font-weight:600;">{total}</td></tr>
+          </table>
+
+          <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Ship to</h2>
+          <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">
+            <strong>{order.shipping_name}</strong><br>
+            {f'{order.shipping_company}<br>' if order.shipping_company else ''}{address_html}<br>
+            <a href="mailto:{order.shipping_email}" style="color:#1b4fff;">{order.shipping_email}</a>
+          </p>
+
+          <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Attachments</h2>
+          <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">
+            • Design image(s) — front{' + back' if order.design_views_json else ''}<br>
+            • Attendee list CSV ({attendee_count} rows)
+          </p>
+          <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;">
+            Stripe PaymentIntent: <code style="background:#f1f5f9;padding:1px 6px;border-radius:3px;">{order.stripe_payment_intent_id}</code>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+
+        resend.Emails.send({
+            "from": f"PlaceCard Orders <{settings.resend_from_email}>",
+            "to": [settings.fulfillment_email],
+            "subject": f"New print order #{order.id} — {order.shipping_name} — {order.quantity} {order.content_type}",
+            "html": html,
+            "attachments": _print_order_attachments(order),
+        })
+        logger.info("Print-order fulfillment email sent for order %s", order.id)
+        return True
+
+    except Exception:
+        logger.exception("Failed to send print-order fulfillment email")
+        return False

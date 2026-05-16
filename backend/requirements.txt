@@ -29,3 +29,7 @@ slowapi==0.1.9
 # Resend transactional email SDK — used by services/email.py to send
 # form invitations and restaurant-share links.
 resend==2.4.0
+# Stripe — print-order checkout (PaymentIntents + webhook signature
+# verification). Server-side only; the publishable key lives in the
+# frontend env, never bundled here.
+stripe==11.4.1

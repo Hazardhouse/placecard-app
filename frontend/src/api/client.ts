@@ -54,6 +54,32 @@ export const api = {
       description: string | null;
       views?: { image_b64: string; mime_type: string; label: string | null }[] | null;
     }[]>>(`/events/${eventId}/designs`),
+  // Append a freshly-generated set to the existing designs for one
+  // content_type. New designs land alongside the prior ones, not
+  // replacing them — the user accumulates variations across Create
+  // clicks instead of losing them. This is the post-generation path.
+  appendDesigns: (
+    eventId: number,
+    contentType: string,
+    designs: {
+      image_b64: string;
+      mime_type: string;
+      description: string | null;
+      views?: { image_b64: string; mime_type: string; label: string | null }[] | null;
+    }[],
+  ) =>
+    request<{
+      image_b64: string;
+      mime_type: string;
+      description: string | null;
+      views?: { image_b64: string; mime_type: string; label: string | null }[] | null;
+    }[]>(`/events/${eventId}/designs`, {
+      method: "POST",
+      body: JSON.stringify({ content_type: contentType, designs }),
+    }),
+  // Replace (clear + repopulate) the entire set for one content_type.
+  // Not used by the post-generation flow — kept for an explicit
+  // "start over" action when one's added later.
   replaceDesigns: (
     eventId: number,
     contentType: string,

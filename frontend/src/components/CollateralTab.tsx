@@ -757,15 +757,21 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
         sample_guest_meal: sampleGuest.meal ?? null,
         schedule_items: scheduleForPrompt,
       });
-      setGeneratedDesigns(result.designs);
+      // Prepend the freshly-generated set so the newest designs land
+      // at the top of "My Designs" — the user can see what they just
+      // paid for without scrolling. Prior designs stay underneath.
+      setDesignsByType(prev => ({
+        ...prev,
+        [contentType]: [...result.designs, ...prev[contentType]],
+      }));
 
-      // Persist server-side so the set survives navigation, refresh,
-      // and session timeouts. Each Gemini call costs real budget, so
-      // we'd rather pay once and load from the DB on subsequent visits.
-      // Fire-and-forget — the user already has the designs in memory;
-      // a network blip on the save shouldn't block the UI.
+      // Persist server-side so the accumulated set survives navigation,
+      // refresh, and session timeouts. Each Gemini call costs real
+      // budget — we want every generation to land in the DB exactly once.
+      // Fire-and-forget; a network blip on the save shouldn't block
+      // the UI while the user is still admiring the result.
       api
-        .replaceDesigns(eventId, contentType, result.designs)
+        .appendDesigns(eventId, contentType, result.designs)
         .catch(err => {
           console.warn("Failed to persist generated designs:", err);
         });

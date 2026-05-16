@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { ScheduleItem, SeatingArrangement, Table, Attendee } from "../types";
 
 interface Props {
+  eventId: number;
   scheduleItems: ScheduleItem[];
   arrangements: SeatingArrangement[];
   tables: Table[];
@@ -607,7 +608,7 @@ const CONTENT_SPECS: Record<ContentType, ContentSpec> = {
 
 const CONTENT_TYPES: ContentType[] = ["tented-name-cards", "programs"];
 
-export default function CollateralTab({ scheduleItems, arrangements, tables, attendees, eventCategory, eventVenueType, eventName, brandColors, brandFont, designsByType: designsByTypeProp, onDesignsByTypeChange, selectedDesignByType: selectedDesignByTypeProp, onSelectedDesignByTypeChange }: Props) {
+export default function CollateralTab({ eventId, scheduleItems, arrangements, tables, attendees, eventCategory, eventVenueType, eventName, brandColors, brandFont, designsByType: designsByTypeProp, onDesignsByTypeChange, selectedDesignByType: selectedDesignByTypeProp, onSelectedDesignByTypeChange }: Props) {
   const [activeView, setActiveView] = useState<string | null>(null);
   const [selectedArrangementId, setSelectedArrangementId] = useState<number>(
     arrangements.length > 0 ? arrangements[0].id : 0
@@ -757,6 +758,17 @@ export default function CollateralTab({ scheduleItems, arrangements, tables, att
         schedule_items: scheduleForPrompt,
       });
       setGeneratedDesigns(result.designs);
+
+      // Persist server-side so the set survives navigation, refresh,
+      // and session timeouts. Each Gemini call costs real budget, so
+      // we'd rather pay once and load from the DB on subsequent visits.
+      // Fire-and-forget — the user already has the designs in memory;
+      // a network blip on the save shouldn't block the UI.
+      api
+        .replaceDesigns(eventId, contentType, result.designs)
+        .catch(err => {
+          console.warn("Failed to persist generated designs:", err);
+        });
     } catch (err: any) {
       setGenerateError(err.message || "Failed to generate designs");
     } finally {
@@ -827,8 +839,20 @@ export default function CollateralTab({ scheduleItems, arrangements, tables, att
       })
     : [];
 
-  // Use first guest for design previews, fallback to sample
-  const sampleGuest: GuestCardData = guestCards[0] ?? { name: "Jane Smith", tableName: "Table 1", dietary: "Vegetarian" };
+  // Use first seated guest for design previews. If no seating yet,
+  // fall back to the first attendee in the event so the preview still
+  // uses a real name from the guest list. The synthetic Jane Smith
+  // placeholder is the last resort — only when the event has zero
+  // attendees at all.
+  const sampleGuest: GuestCardData = guestCards[0]
+    ?? (attendees[0]
+      ? {
+          name: attendees[0].name,
+          tableName: tables[0]?.name ?? "Table 1",
+          dietary: attendees[0].dietary_requirements ?? null,
+          meal: firstMealOrNull((attendees[0] as any)?.responses),
+        }
+      : { name: "Jane Smith", tableName: "Table 1", dietary: "Vegetarian" });
 
   // Generate custom designs from brand colors
   const brandDesigns = brandColors.map((color, i) => ({

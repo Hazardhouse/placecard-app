@@ -44,6 +44,41 @@ export const api = {
   duplicateEvent: (id: number) =>
     request<import("../types").Event>(`/events/${id}/duplicate`, { method: "POST" }),
 
+  // Saved designs — persists generated name-card / program sets per event
+  // so they survive navigation, refresh, and session timeouts. Without
+  // this, every page load would regenerate against Gemini and burn budget.
+  listDesigns: (eventId: number) =>
+    request<Record<string, {
+      image_b64: string;
+      mime_type: string;
+      description: string | null;
+      views?: { image_b64: string; mime_type: string; label: string | null }[] | null;
+    }[]>>(`/events/${eventId}/designs`),
+  replaceDesigns: (
+    eventId: number,
+    contentType: string,
+    designs: {
+      image_b64: string;
+      mime_type: string;
+      description: string | null;
+      views?: { image_b64: string; mime_type: string; label: string | null }[] | null;
+    }[],
+  ) =>
+    request<{
+      image_b64: string;
+      mime_type: string;
+      description: string | null;
+      views?: { image_b64: string; mime_type: string; label: string | null }[] | null;
+    }[]>(`/events/${eventId}/designs`, {
+      method: "PUT",
+      body: JSON.stringify({ content_type: contentType, designs }),
+    }),
+  clearDesigns: (eventId: number, contentType?: string) =>
+    request<void>(
+      `/events/${eventId}/designs${contentType ? `?content_type=${encodeURIComponent(contentType)}` : ""}`,
+      { method: "DELETE" },
+    ),
+
   // Public event page (no auth required)
   getPublicEvent: (token: string) =>
     request<import("../types").Event>(`/public-event/${token}`),

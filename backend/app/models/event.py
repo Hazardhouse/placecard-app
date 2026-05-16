@@ -41,3 +41,4 @@ class Event(Base):
     google_form_connections = relationship("GoogleFormConnection", back_populates="event", cascade="all, delete-orphan")
     schedule_items = relationship("ScheduleItem", back_populates="event", cascade="all, delete-orphan")
     custom_forms = relationship("CustomForm", back_populates="event", cascade="all, delete-orphan")
+    designs = relationship("Design", back_populates="event", cascade="all, delete-orphan")

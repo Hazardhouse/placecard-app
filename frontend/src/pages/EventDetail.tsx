@@ -89,7 +89,9 @@ export default function EventDetail() {
 
   // Generated designs + selection live here so they survive tab switches —
   // CollateralTab unmounts when the user navigates to another tab, and we
-  // don't want the designs to disappear with it.
+  // don't want the designs to disappear with it. The DB-backed listDesigns
+  // hydrates this on mount so refreshes / AttendeeDetail navigation also
+  // recover the set without burning fresh Gemini calls.
   const [designsByType, setDesignsByType] = useState<DesignsByType>({
     "tented-name-cards": [],
     "name-cards": [],
@@ -221,19 +223,28 @@ export default function EventDetail() {
   };
 
   const loadData = useCallback(async () => {
-    const [ev, att, tbl, arr, sched, forms] = await Promise.all([
+    const [ev, att, tbl, arr, sched, forms, savedDesigns] = await Promise.all([
       api.getEvent(id),
       api.listAttendees(id),
       api.listTables(id),
       api.listArrangements(id),
       api.listSchedule(id),
       api.listForms(id),
+      // Hydrate persisted designs so navigating to AttendeeDetail or
+      // hard-refreshing the page recovers the set without burning
+      // another round of Gemini generation calls.
+      api.listDesigns(id).catch(() => ({} as Record<string, never>)),
     ]);
     setEvent(ev);
     setAttendees(att);
     setTables(tbl);
     setScheduleItems(sched);
     if (forms.length > 0) setEventForm(forms[0]);
+    setDesignsByType({
+      "tented-name-cards": (savedDesigns as any)["tented-name-cards"] ?? [],
+      "name-cards": (savedDesigns as any)["name-cards"] ?? [],
+      programs: (savedDesigns as any)["programs"] ?? [],
+    });
 
     // Ensure each schedule item that requires seating has a corresponding arrangement
     let allArr = arr;
@@ -873,6 +884,7 @@ export default function EventDetail() {
 
       {activeTab === "collateral" && (
         <CollateralTab
+          eventId={id}
           scheduleItems={scheduleItems}
           arrangements={arrangements}
           tables={tables}

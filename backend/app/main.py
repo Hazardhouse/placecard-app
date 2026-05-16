@@ -12,7 +12,8 @@ from app.models import event, attendee, table, seating as seating_models, google
 from app.models import notification as notification_models  # noqa: F401
 from app.models import custom_form as custom_form_models  # noqa: F401
 from app.models import email_subscriber as email_subscriber_models  # noqa: F401
-from app.routers import attendees, events, fourover, places, seating, tables, schedule, users, settings as settings_router, custom_forms, brand_colors, name_cards, restaurant_share, document_import, unsubscribe
+from app.models import design as design_models  # noqa: F401
+from app.routers import attendees, events, fourover, places, seating, tables, schedule, users, settings as settings_router, custom_forms, brand_colors, name_cards, restaurant_share, document_import, unsubscribe, designs
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ app.include_router(name_cards.router)
 app.include_router(restaurant_share.router)
 app.include_router(document_import.router)
 app.include_router(unsubscribe.router)
+app.include_router(designs.router)
 
 
 @app.get("/api/health")

@@ -4418,15 +4418,18 @@ select:focus {
 }
 .nc-gen-scroll .nc-design-wrapper {
   background: #fff;
-  border: 1px solid var(--border);
+  /* 3px border at all times so the selected state can switch colour
+     without resizing the box — using box-shadow as the "outer ring"
+     before gets clipped by ancestor overflow at the top + bottom
+     edges of the scroll, so the blue outline reads as cut off. */
+  border: 3px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 14px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .nc-gen-scroll .nc-design-wrapper.nc-design-selected {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary), 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 .nc-use-design {
   display: flex;

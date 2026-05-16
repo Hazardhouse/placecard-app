@@ -181,29 +181,11 @@ function GeneratedDesignCard({ image, designNumber, selected, onToggle, groupNam
 
 export type ContentType = "tented-name-cards" | "name-cards" | "programs";
 
-// Print-pricing tiers from 4over (retail prices customers see).
-// Customers pay the tier price — quantities below the tier still pay the
-// tier minimum. >75 currently has no published rate; UI surfaces a
-// "Get a quote" CTA in that case. TODO(launch): move these to a backend
-// pricing config so they're not hardcoded in the frontend.
-const PRINT_TIERS = [
-  { upTo: 25, retail: 65.52, rushFee: 60 },
-  { upTo: 50, retail: 78.32, rushFee: 60 },
-  { upTo: 75, retail: 86.32, rushFee: 70 },
-] as const;
 
-// Flat add-on price for removing the "Hosted via PlaceCard" footer/back
-// branding from printed cards.
-const REMOVE_BRANDING_FEE = 12;
-
-function getPrintTier(qty: number) {
-  if (qty <= 0) return null;
-  return PRINT_TIERS.find(t => qty <= t.upTo) ?? null;
-}
-
-function formatPrice(n: number): string {
-  return `$${n.toFixed(2)}`;
-}
+// (REMOVE_BRANDING_FEE / getPrintTier / formatPrice / PRINT_TIERS were
+//  pricing helpers for the legacy PrintPopup, which is now gone. Real
+//  pricing is computed server-side via app/pricing.py and displayed
+//  inside PrintCheckoutModal.)
 
 export type DesignView = { image_b64: string; mime_type: string; label: string | null };
 export type Design = {
@@ -260,8 +242,12 @@ const CONTENT_SPECS: Record<ContentType, ContentSpec> = {
 const CONTENT_TYPES: ContentType[] = ["tented-name-cards", "programs"];
 
 export default function CollateralTab({ eventId, scheduleItems, arrangements, tables, attendees, eventCategory, eventVenueType, eventName, brandColors, brandFont, designsByType: designsByTypeProp, onDesignsByTypeChange, selectedDesignByType: selectedDesignByTypeProp, onSelectedDesignByTypeChange, latestGenerationCountByType: latestGenerationCountByTypeProp, onLatestGenerationCountByTypeChange, generating: generatingProp, onGeneratingChange }: Props) {
-  const [activeView, setActiveView] = useState<string | null>(null);
-  const [selectedArrangementId, setSelectedArrangementId] = useState<number>(
+  // activeView used to drive the standalone name-cards gallery view;
+  // that view was retired in favour of the inline PrintCheckoutModal,
+  // so this stays null. The conditional renders that reference it
+  // (sticky CTA hide-in-name-cards) are kept harmless.
+  const activeView: string | null = null;
+  const [selectedArrangementId] = useState<number>(
     arrangements.length > 0 ? arrangements[0].id : 0
   );
   const [selectedCategory] = useState<DesignCategory>(detectCategory(eventCategory, eventVenueType));
@@ -284,18 +270,13 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
     const timeout = setTimeout(() => setShowWildCardPopup(false), wildCardEnabled ? 3200 : 1800);
     return () => clearTimeout(timeout);
   }, [showWildCardPopup, wildCardEnabled]);
-  const [baseTotalPrice, setBaseTotalPrice] = useState<number | null>(null);
-  const [baseQuantity, setBaseQuantity] = useState<number>(0);
-  const [basePriceLoading, setBasePriceLoading] = useState(false);
-  const [orderAllEvents, setOrderAllEvents] = useState(false);
-  // Go-to-Print confirmation popup. When the user has more than one
-  // seated schedule item, we ask whether they want unique cards per
-  // sitting or a single reusable set before sending them into the print
-  // flow. `setMode` is the user's pick; null = popup closed.
-  const [printPopupOpen, setPrintPopupOpen] = useState(false);
-  const [printSetMode, setPrintSetMode] = useState<"per-event" | "reusable">("reusable");
-  const [printRushSelected, setPrintRushSelected] = useState(false);
-  const [printRemoveBranding, setPrintRemoveBranding] = useState(false);
+  // baseTotalPrice / baseQuantity / basePriceLoading used to drive the
+  // header price preview inside the retired name-cards gallery view.
+  // Removed along with the view itself.
+  // (Popup-related state — orderAllEvents, printPopupOpen, printSetMode,
+  // printRushSelected, printRemoveBranding — all removed with the legacy
+  // PrintPopup. The rush + remove-branding ticks now live inside
+  // PrintCheckoutModal's options step, owned per-checkout-session.)
 
   // NanoBanana generated designs — kept separately per content type so switching
   // chips doesn't mix results from different print formats.
@@ -459,8 +440,6 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
     }
   };
 
-  const seatingEventCount = scheduleItems.filter(s => s.requires_seating).length || 1;
-  const cardQuantity = attendees.length * (orderAllEvents ? seatingEventCount : 1);
 
   // Click handler shared by both "Go to Print" surfaces (header CTA + sticky
   // FAB). Opens PrintCheckoutModal directly at its "options" step — the
@@ -474,51 +453,9 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
     setCheckoutAiDesign(aiDesign);
   };
 
-  const confirmPrintFlow = () => {
-    // When there's only one seated sitting the radio is hidden and the
-    // mode is forced to "reusable" — guarantee we don't carry a stale
-    // "per-event" from earlier popup interactions.
-    const effectiveMode = seatingEventCount > 1 ? printSetMode : "reusable";
-    setOrderAllEvents(effectiveMode === "per-event");
-    setPrintPopupOpen(false);
 
-    // Open the checkout modal directly with the user's currently-
-    // selected AI design. The popup's rush + remove-branding ticks
-    // flow through via state and into PrintCheckoutModal's props.
-    // (The intermediate name-cards gallery view that used to live
-    // between Continue and checkout is now bypassed.)
-    const selectedIdx = selectedDesignByType[contentType];
-    if (selectedIdx === null) return;
-    const aiDesign = designsByType[contentType][selectedIdx];
-    if (!aiDesign) return;
-    setCheckoutAiDesign(aiDesign);
-  };
-
-  // Fetch base price for attendee count when entering name cards view or toggling all events
-  useEffect(() => {
-    if (activeView !== "name-cards") return;
-    if (cardQuantity === 0) {
-      setBaseTotalPrice(0);
-      setBaseQuantity(0);
-      return;
-    }
-    setBasePriceLoading(true);
-    // Header price preview uses the modal-default country (GB) so the
-    // figure matches what the user sees when they actually open the
-    // checkout. Recomputed on the address step using their real country.
-    api.getPrintQuote({
-      country: "GB",
-      content_type: "tented-name-cards",
-      quantity: cardQuantity,
-      paper_stock: "14PT C2S",
-      finish: "No coating",
-      color_spec: "4/4",
-    })
-      .then(r => { setBaseTotalPrice(r.total_amount); setBaseQuantity(r.quantity_tier); })
-      .catch(() => {})
-      .finally(() => setBasePriceLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, cardQuantity]);
+  // (Header price-preview useEffect retired with the name-cards view.
+  //  Real pricing is computed inside PrintCheckoutModal on every step.)
 
   // Get guest data for the selected arrangement
   const arrangement = arrangements.find(a => a.id === selectedArrangementId);
@@ -553,140 +490,6 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
         }
       : { name: "Jane Smith", tableName: "Table 1", dietary: "Vegetarian" });
 
-  if (activeView === "name-cards") {
-    return (
-      <div className="collateral-tab">
-        <div className="nc-header">
-          <div className="nc-header-left">
-            <button className="nc-back-btn" onClick={() => setActiveView(null)}>←</button>
-            <div>
-              <h2 className="nc-title">Name Card Designs</h2>
-              <p className="nc-subtitle">Tented name cards 2" x 3.5" folded</p>
-            </div>
-          </div>
-          <div className="nc-header-right">
-            {baseTotalPrice != null && (
-              <span className="nc-order-info">{baseQuantity} cards · ${baseTotalPrice.toFixed(2)}</span>
-            )}
-            {basePriceLoading && <span className="nc-order-info">...</span>}
-            <button
-              className="btn btn-primary nc-order-btn-lg"
-              onClick={() => {
-                // Find the user's currently-selected AI design from
-                // the gallery. Without one, there's nothing to print.
-                const selectedIdx = selectedDesignByType[contentType];
-                if (selectedIdx === null) return;
-                const aiDesign = designsByType[contentType][selectedIdx];
-                if (!aiDesign) return;
-                setCheckoutAiDesign(aiDesign);
-              }}
-              disabled={attendees.length === 0 || selectedDesignByType[contentType] === null}
-              title={
-                attendees.length === 0
-                  ? "Add attendees first"
-                  : selectedDesignByType[contentType] === null
-                    ? "Select a design from PlaceCard AI first"
-                    : ""
-              }
-              style={
-                attendees.length === 0 || selectedDesignByType[contentType] === null
-                  ? { opacity: 0.5, cursor: "not-allowed" }
-                  : {}
-              }
-            >
-              Order Now
-            </button>
-          </div>
-        </div>
-
-        <div className="nc-toolbar">
-          <div className="nc-toolbar-left">
-            <div className="nc-select-row">
-              <label className="nc-select-label">Select Event</label>
-              <select
-                className="nc-event-select"
-                value={selectedArrangementId}
-                onChange={e => setSelectedArrangementId(Number(e.target.value))}
-              >
-                {arrangements.map(arr => (
-                  <option key={arr.id} value={arr.id}>{arr.name}</option>
-                ))}
-                {scheduleItems.filter(si => !arrangements.some(a => a.name === si.title)).map(si => (
-                  <option key={`si-${si.id}`} value="" disabled>
-                    {si.venue_type ? `${si.venue_type}: ` : ""}{si.title} (no seating)
-                  </option>
-                ))}
-              </select>
-              <button
-                className={`btn btn-primary nc-create-btn${generating ? " extracting-btn" : ""}`}
-                onClick={handleGenerateDesigns}
-                disabled={generating}
-              >
-                {generating ? (
-                  <span className="extracting-text">
-                    <span className="extracting-dots"></span>
-                    {generatingMessages[genMsgIdx]}
-                  </span>
-                ) : "Create"}
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="nc-preview-label">
-          Previewing with: <strong>{sampleGuest.name}</strong>
-        </div>
-
-        {/* Generated designs from NanoBanana */}
-        {generateError && (
-          <div className="nc-generate-error">{generateError}</div>
-        )}
-        {generatedDesigns.length > 0 && (
-          <div className="nc-gen-scroll">
-            {generatedDesigns.map((design, i) => (
-              <GeneratedDesignCard
-                key={i}
-                image={design}
-                designNumber={i + 1}
-                selected={selectedDesign === i}
-                onToggle={() => setSelectedDesign(i)}
-                groupName={`design-classic-${contentType}`}
-                contentType={contentType}
-              />
-            ))}
-          </div>
-        )}
-
-        {checkoutAiDesign && (
-          <PrintCheckoutModal
-            eventId={eventId}
-            contentType={contentType}
-            design={{
-              image_b64: checkoutAiDesign.image_b64,
-              mime_type: checkoutAiDesign.mime_type,
-              description: checkoutAiDesign.description,
-              views: checkoutAiDesign.views ?? null,
-            }}
-            attendees={
-              guestCards.length > 0
-                ? guestCards.map(g => ({
-                    name: g.name,
-                    table_name: g.tableName,
-                    dietary: g.dietary ?? null,
-                  }))
-                : attendees.map(a => ({
-                    name: a.name,
-                    table_name: null,
-                    dietary: a.dietary_requirements ?? null,
-                  }))
-            }
-            initialRush={printRushSelected}
-            initialRemoveBranding={printRemoveBranding}
-            onClose={() => setCheckoutAiDesign(null)}
-          />
-        )}
-      </div>
-    );
-  }
 
   const handleSubmitPrompt = () => {
     handleGenerateDesigns();
@@ -1002,143 +805,38 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
           the rush + branding upsells. The reusable/per-sitting radio is
           only shown when there's more than one seated sitting; otherwise
           the choice is fixed to reusable. */}
-      {printPopupOpen && (() => {
-        const multipleSittings = seatingEventCount > 1;
-        const effectiveMode = multipleSittings ? printSetMode : "reusable";
-        const reusableTotal = attendees.length;
-        const perEventTotal = attendees.length * seatingEventCount;
-        const reusableTier = getPrintTier(reusableTotal);
-        const perEventTier = getPrintTier(perEventTotal);
-        const total = effectiveMode === "per-event" ? perEventTotal : reusableTotal;
-        const selectedTier = effectiveMode === "per-event" ? perEventTier : reusableTier;
-        return (
-          <div className="pc-print-popup-layer" role="dialog" aria-modal="true">
-            <div className="pc-print-popup-backdrop" onClick={() => setPrintPopupOpen(false)} />
-            <div className="pc-print-popup">
-              <h2 className="pc-print-popup-title">
-                {multipleSittings ? "How many sets of name cards?" : "Print name cards"}
-              </h2>
-              <p className="pc-print-popup-sub">
-                {multipleSittings
-                  ? `You have ${seatingEventCount} seated sittings and ${attendees.length} attendees.`
-                  : `${attendees.length} attendee${attendees.length === 1 ? "" : "s"} — one set of cards.`}
-              </p>
 
-              {multipleSittings && (
-                <>
-                  <label className={`pc-print-popup-option ${printSetMode === "reusable" ? "pc-print-popup-option-active" : ""}`}>
-                    <input
-                      type="radio"
-                      name="print-set-mode"
-                      value="reusable"
-                      checked={printSetMode === "reusable"}
-                      onChange={() => setPrintSetMode("reusable")}
-                    />
-                    <div className="pc-print-popup-option-body">
-                      <div className="pc-print-popup-option-label">One Reusable Set</div>
-                      <div className="pc-print-popup-option-desc">
-                        A single set of cards your guests pick up once and carry with them through every sitting.
-                      </div>
-                      <div className="pc-print-popup-option-meta">
-                        <span className="pc-print-popup-option-count">{reusableTotal} cards</span>
-                        <span className="pc-print-popup-option-price">
-                          {reusableTier
-                            ? (reusableTotal < reusableTier.upTo
-                                ? `${formatPrice(reusableTier.retail)} · ${reusableTier.upTo}-card minimum`
-                                : formatPrice(reusableTier.retail))
-                            : "Custom quote — over 75 cards"}
-                        </span>
-                      </div>
-                    </div>
-                  </label>
-
-                  <label className={`pc-print-popup-option ${printSetMode === "per-event" ? "pc-print-popup-option-active" : ""}`}>
-                    <input
-                      type="radio"
-                      name="print-set-mode"
-                      value="per-event"
-                      checked={printSetMode === "per-event"}
-                      onChange={() => setPrintSetMode("per-event")}
-                    />
-                    <div className="pc-print-popup-option-body">
-                      <div className="pc-print-popup-option-label">Per Sitting with Seating</div>
-                      <div className="pc-print-popup-option-desc">
-                        A unique set for each of the {seatingEventCount} seated sittings — pre-set on tables so guests find their spot every time.
-                      </div>
-                      <div className="pc-print-popup-option-meta">
-                        <span className="pc-print-popup-option-count">{perEventTotal} cards ({attendees.length} × {seatingEventCount})</span>
-                        <span className="pc-print-popup-option-price">
-                          {perEventTier
-                            ? (perEventTotal < perEventTier.upTo
-                                ? `${formatPrice(perEventTier.retail)} · ${perEventTier.upTo}-card minimum`
-                                : formatPrice(perEventTier.retail))
-                            : "Custom quote — over 75 cards"}
-                        </span>
-                      </div>
-                    </div>
-                  </label>
-                </>
-              )}
-
-              {selectedTier && (
-                <div className="pc-print-popup-addons">
-                  <label className="pc-print-popup-addon">
-                    <input
-                      type="checkbox"
-                      checked={printRushSelected}
-                      onChange={e => setPrintRushSelected(e.target.checked)}
-                    />
-                    <span className="pc-print-popup-addon-body">
-                      <span className="pc-print-popup-addon-label">Need them tomorrow?</span>
-                      <span className="pc-print-popup-addon-desc">Next-business-day rush printing.</span>
-                    </span>
-                    <span className="pc-print-popup-addon-price">+{formatPrice(selectedTier.rushFee)}</span>
-                  </label>
-                  <label className="pc-print-popup-addon">
-                    <input
-                      type="checkbox"
-                      checked={printRemoveBranding}
-                      onChange={e => setPrintRemoveBranding(e.target.checked)}
-                    />
-                    <span className="pc-print-popup-addon-body">
-                      <span className="pc-print-popup-addon-label">Remove PlaceCard branding</span>
-                      <span className="pc-print-popup-addon-desc">Strip the "Hosted via PlaceCard" mark from the print.</span>
-                    </span>
-                    <span className="pc-print-popup-addon-price">+{formatPrice(REMOVE_BRANDING_FEE)}</span>
-                  </label>
-                </div>
-              )}
-
-              {(() => {
-                const baseRetail = selectedTier?.retail ?? 0;
-                const rushCost = selectedTier && printRushSelected ? selectedTier.rushFee : 0;
-                const brandingCost = printRemoveBranding ? REMOVE_BRANDING_FEE : 0;
-                const grandTotal = baseRetail + rushCost + brandingCost;
-                return (
-                  <div className="pc-print-popup-total">
-                    <div className="pc-print-popup-total-row">
-                      <span>{total} name cards · {printRushSelected ? "next-business-day" : "3-day turnaround"}</span>
-                      <strong>{selectedTier ? formatPrice(grandTotal) : "—"}</strong>
-                    </div>
-                    {!selectedTier && (
-                      <div className="pc-print-popup-total-rush">
-                        {total} cards is above our published brackets — we'll send a custom quote.
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              <div className="pc-print-popup-actions">
-                <button type="button" className="btn" onClick={() => setPrintPopupOpen(false)}>Cancel</button>
-                <button type="button" className="pc-ai-print-btn" onClick={confirmPrintFlow}>
-                  Continue →
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* Print checkout modal — top-level so the new flow doesn't
+          depend on activeView being set to anything in particular.
+          openPrintFlow sets checkoutAiDesign; this renders the
+          single-window 4-step checkout (Options → Address →
+          Payment → Success) on top of whatever screen you're on. */}
+      {checkoutAiDesign && (
+        <PrintCheckoutModal
+          eventId={eventId}
+          contentType={contentType}
+          design={{
+            image_b64: checkoutAiDesign.image_b64,
+            mime_type: checkoutAiDesign.mime_type,
+            description: checkoutAiDesign.description,
+            views: checkoutAiDesign.views ?? null,
+          }}
+          attendees={
+            guestCards.length > 0
+              ? guestCards.map(g => ({
+                  name: g.name,
+                  table_name: g.tableName,
+                  dietary: g.dietary ?? null,
+                }))
+              : attendees.map(a => ({
+                  name: a.name,
+                  table_name: null,
+                  dietary: a.dietary_requirements ?? null,
+                }))
+          }
+          onClose={() => setCheckoutAiDesign(null)}
+        />
+      )}
 
     </div>
   );

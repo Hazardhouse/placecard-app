@@ -12,10 +12,20 @@ import os
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/print", tags=["print"])
+from app.auth import get_current_user
+
+# Router-level auth dep — the print endpoints place real orders and
+# expose order status. Public access would (a) let anyone submit
+# orders against the production 4over API and (b) let anyone enumerate
+# job_ids to read other customers' shipping addresses + statuses.
+router = APIRouter(
+    prefix="/api/print",
+    tags=["print"],
+    dependencies=[Depends(get_current_user)],
+)
 
 # ── Config ──────────────────────────────────────────────────────────
 

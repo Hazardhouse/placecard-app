@@ -8,23 +8,89 @@ Two-step process:
 
 import asyncio as _aio
 import base64
+import ipaddress
 import json as _json
 import logging
 import re
+import socket
 from collections import Counter
 from typing import List, Optional, Tuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("brand_colors")
 
+from app.auth import get_current_user
 from app.config import settings
 
-router = APIRouter(prefix="/api/brand", tags=["brand"])
+# Router-level auth dep — this endpoint fetches arbitrary user-provided
+# URLs server-side and calls Gemini for visual analysis. Without auth
+# it's an open SSRF + Gemini-budget burner.
+router = APIRouter(
+    prefix="/api/brand",
+    tags=["brand"],
+    dependencies=[Depends(get_current_user)],
+)
+
+
+# ── SSRF protection ─────────────────────────────────────────────────────
+#
+# The user-supplied URL flows into httpx fetches with follow_redirects=True.
+# Without validation a caller could point us at:
+#   - http://127.0.0.1:8000     → probe our own internal API
+#   - http://10.x / 172.16.x / 192.168.x → internal services
+#   - http://169.254.169.254    → cloud metadata (AWS/GCP IMDS)
+#   - file://, gopher://, etc.  → file/protocol smuggling
+#
+# We block all of those on the *initial* hostname. Redirects after the
+# initial hop are still followed by httpx — a fully redirect-aware
+# SSRF guard would require disabling follow_redirects and walking each
+# hop manually. Captured as a follow-up in the launch checklist.
+
+ALLOWED_SCHEMES = {"http", "https"}
+
+
+def _is_safe_url(url: str) -> Tuple[bool, str]:
+    """Return (is_safe, reason) for an outbound fetch URL."""
+    try:
+        parsed = urlparse(url)
+    except Exception as exc:
+        return False, f"Invalid URL ({exc})"
+
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ALLOWED_SCHEMES:
+        return False, f"Only http/https URLs allowed (got {scheme!r})"
+
+    host = parsed.hostname
+    if not host:
+        return False, "URL has no hostname"
+
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        return False, f"Could not resolve hostname ({exc})"
+
+    for info in infos:
+        ip_str = info[4][0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            return False, f"URL resolves to restricted address {ip_str}"
+
+    return True, ""
 
 GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
@@ -415,6 +481,13 @@ async def extract_brand_colors(req: ColorExtractRequest):
     url = req.url
     if not url.startswith("http"):
         url = f"https://{url}"
+
+    # SSRF guard — reject loopback / RFC1918 / link-local / cloud metadata
+    # before any server-side fetch goes out. See `_is_safe_url` for full
+    # rationale.
+    safe, reason = _is_safe_url(url)
+    if not safe:
+        raise HTTPException(status_code=400, detail=f"Invalid URL: {reason}")
 
     # -----------------------------------------------------------
     # Kick off HTML/CSS fetch + screenshot in parallel

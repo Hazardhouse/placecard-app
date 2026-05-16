@@ -56,19 +56,49 @@ order to do things in.
       — before any non-operator account is granted access.** Verifies
       JWT middleware, RLS, rate limiting, GDPR endpoints in place.
       *Events-ownership slice landed 2026-05-15:* `events.user_id`
-      column added (migration `c1e8a7d2f5b9`), auth wired into the
-      events router via `get_user_event` dependency, cascaded into
-      attendees/tables/schedule/seating/custom_forms. **Production
-      activation requires three steps in order:**
-      1. `alembic upgrade head` on the prod backend
-      2. Run `supabase/migrations/20260515_003_backfill_events_user_id.sql`
-         in the Supabase SQL editor (assigns existing events to Dani's
-         UUID — otherwise they vanish from her view when auth engages)
-      3. Set `REQUIRE_AUTH=true` env var on Render + restart the service
-      *Still outstanding for §2:* settings/notifications router
-      audit, per-user scoping on `notification_settings`, RLS policies
-      on Supabase tables, and a follow-up migration to make
-      `events.user_id` NOT NULL once backfill is verified.
+      column added (migration `c1e8a7d2f5b9`), auth wired via
+      `get_user_event` dep, cascaded into attendees/tables/schedule/
+      seating/custom_forms. ES256 JWT verification + JWKS support
+      landed same day (auth.py). **Production activation:**
+      1. `alembic upgrade head` ✓
+      2. `supabase/migrations/20260515_003_backfill_events_user_id.sql` ✓
+      3. `REQUIRE_AUTH=true` env var on Render ✓
+      *Security-sweep slice landed 2026-05-16:*
+      - `events.user_id` tightened to NOT NULL (migration `d4e8b1f5a3c2`)
+      - `notification_settings.user_id` added (migration `e9f2a4d8c6b7`);
+        `settings.py` refactored so settings + message usage are per-user
+      - Router-level auth gates added to `users`, `name_cards`,
+        `brand_colors`, `fourover`, `places`, `document_import` —
+        previously open to anonymous callers (Gemini/Places budget
+        burn, financial endpoints, SSRF surface)
+      - `get_user_event` cascade into `restaurant_share` organizer
+        endpoints (link create/revoke/send were taking event_id with
+        no ownership check)
+      - SSRF guard on `brand_colors.extract-colors`: rejects
+        non-http(s) schemes + private/loopback/link-local/metadata IPs
+      **Production activation for the 2026-05-16 slice:**
+      1. Render auto-deploys on push
+      2. `alembic upgrade head` runs on boot (adds the two new columns)
+      3. Run `supabase/migrations/20260516_004_backfill_notification_settings_user_id.sql`
+         in Supabase SQL Editor (assigns the existing global
+         notification_settings row to Dani's UUID)
+      *Still outstanding (defense-in-depth — none block launch but
+      worth doing before customer accounts):*
+      - Supabase RLS policies on `events` / `notification_settings`
+        as a DB-layer backstop to the app-layer scoping
+      - Follow-up migration to tighten `notification_settings.user_id`
+        to NOT NULL once backfill is verified
+      - Role-based access on `users.invite` (currently any
+        authenticated user can invite; should be admin-only)
+      - Per-event scoping on `fourover` print orders so order status
+        lookups don't leak across users
+      - Redirect-aware SSRF on `brand_colors` (current guard checks
+        the initial URL only; httpx still follows redirects)
+      - Per-endpoint rate limit tuning — bump signup/login down to
+        5/min, name-card and brand-color generation to ~10/hour
+      - Error-message hygiene pass on `auth.py` (current messages
+        leak which check failed; fine for soft-launch, tighten before
+        public)
 - [ ] **Run `SOP-SECURITY-RUNBOOK.md` §3 — Final Pass — before
       marketing site flips off the waitlist.** Backups verified,
       monitoring active, incident response documented, git history

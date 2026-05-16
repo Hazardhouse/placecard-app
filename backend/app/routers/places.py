@@ -6,12 +6,20 @@ Provides location autocomplete, nearby venue search, and static map images.
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
+from app.auth import get_current_user
 from app.config import settings
 
-router = APIRouter(prefix="/api/places", tags=["places"])
+# Router-level auth dep — every endpoint here proxies Google Maps /
+# Places API calls, each of which is billable. Leaving this open
+# would let any visitor run up the GOOGLE_PLACES_API_KEY budget.
+router = APIRouter(
+    prefix="/api/places",
+    tags=["places"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("/autocomplete")

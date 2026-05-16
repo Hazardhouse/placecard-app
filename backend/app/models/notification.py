@@ -10,6 +10,10 @@ class NotificationSettings(Base):
     __tablename__ = "notification_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    # Supabase auth.users.id (UUID), or 'anonymous' in dev. Nullable for
+    # the migration window; will be NOT NULL in a follow-up once prod
+    # is backfilled (one row, easy). One settings row per user.
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
     event_reminders: Mapped[bool] = mapped_column(Boolean, default=True)
     reminder_minutes: Mapped[int] = mapped_column(Integer, default=60)
     include_google_maps_link: Mapped[bool] = mapped_column(Boolean, default=True)

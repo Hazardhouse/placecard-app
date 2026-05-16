@@ -13,16 +13,24 @@ import logging
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from PIL import Image, ImageOps
 from pydantic import BaseModel
 
+from app.auth import get_current_user
 from app.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("name_cards")
 
-router = APIRouter(prefix="/api/cards", tags=["cards"])
+# Router-level auth dep — each request fans out to several Gemini calls
+# (3 designs × 2 views = 6 by default), each of which is billable.
+# Leaving this open would let any visitor burn Gemini budget at will.
+router = APIRouter(
+    prefix="/api/cards",
+    tags=["cards"],
+    dependencies=[Depends(get_current_user)],
+)
 
 NANOBANANA_MODELS = [
     "gemini-3.1-flash-image-preview",   # Nano Banana 2 (fast previews)

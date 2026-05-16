@@ -24,11 +24,20 @@ import re
 from typing import Any, List, Optional
 
 import pdfplumber
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+
+from app.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["document-import"])
+# Router-level auth dep — PDF parsing is resource-heavy (up to 10MB
+# per upload, then pdfplumber walks every page). Anonymous access
+# is a cheap denial-of-service vector.
+router = APIRouter(
+    prefix="/api",
+    tags=["document-import"],
+    dependencies=[Depends(get_current_user)],
+)
 
 MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB — guest lists are tiny; bigger uploads
                                    # are almost always wrong-file mistakes.

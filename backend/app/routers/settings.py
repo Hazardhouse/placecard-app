@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.auth import CurrentUser, get_current_user
 from app.database import get_db
+from app.models.event import Event
 from app.models.notification import NotificationLog, NotificationSettings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -38,27 +40,43 @@ class MessageUsageSchema(BaseModel):
     plan: str
 
 
-@router.get("/notifications", response_model=NotificationSettingsSchema)
-def get_notification_settings(db: Session = Depends(get_db)):
-    settings = db.query(NotificationSettings).first()
+def _settings_for_user(user: CurrentUser, db: Session) -> NotificationSettings:
+    """Resolve the caller's notification_settings row, creating one on demand.
+
+    Each user owns exactly one row. We scope by user_id and create the
+    row lazily the first time the caller hits the settings page rather
+    than pre-seeding on signup — keeps the signup trigger free of
+    app-layer concerns and avoids a stale row for users who never
+    visit Settings.
+    """
+    settings = (
+        db.query(NotificationSettings)
+        .filter(NotificationSettings.user_id == user.id)
+        .first()
+    )
     if not settings:
-        settings = NotificationSettings()
+        settings = NotificationSettings(user_id=user.id)
         db.add(settings)
         db.commit()
         db.refresh(settings)
     return settings
 
 
+@router.get("/notifications", response_model=NotificationSettingsSchema)
+def get_notification_settings(
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return _settings_for_user(user, db)
+
+
 @router.put("/notifications", response_model=NotificationSettingsSchema)
 def update_notification_settings(
     data: NotificationSettingsSchema,
+    user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    settings = db.query(NotificationSettings).first()
-    if not settings:
-        settings = NotificationSettings()
-        db.add(settings)
-
+    settings = _settings_for_user(user, db)
     settings.event_reminders = data.event_reminders
     settings.reminder_minutes = data.reminder_minutes
     settings.include_google_maps_link = data.include_google_maps_link
@@ -70,43 +88,42 @@ def update_notification_settings(
 
 
 @router.get("/message-usage", response_model=MessageUsageSchema)
-def get_message_usage(db: Session = Depends(get_db)):
-    """Get current month's message usage and plan limits."""
-    # Current plan — in production, pull from billing/subscription table
+def get_message_usage(
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Per-user message usage this month + the user's plan limits.
+
+    Usage is counted by joining notification_logs through events so
+    a user only sees the SMS/WhatsApp they sent — not the platform-wide
+    aggregate.
+    """
     # TODO(launch): replace with the user's actual plan from a billing/plan
     # table once Stripe (or the chosen processor) is wired in. Hardcoded
     # while the site is on the waitlist.
     plan = "Socialite"
     limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["Free"])
 
-    # Count messages sent this month
     now = datetime.utcnow()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    sms_used = (
-        db.query(func.count(NotificationLog.id))
-        .filter(
-            NotificationLog.channel == "sms",
-            NotificationLog.status == "sent",
-            NotificationLog.sent_at >= month_start,
+    def _count(channel: str) -> int:
+        q = (
+            db.query(func.count(NotificationLog.id))
+            .join(Event, Event.id == NotificationLog.event_id)
+            .filter(
+                NotificationLog.channel == channel,
+                NotificationLog.status == "sent",
+                NotificationLog.sent_at >= month_start,
+                Event.user_id == user.id,
+            )
         )
-        .scalar() or 0
-    )
-
-    whatsapp_used = (
-        db.query(func.count(NotificationLog.id))
-        .filter(
-            NotificationLog.channel == "whatsapp",
-            NotificationLog.status == "sent",
-            NotificationLog.sent_at >= month_start,
-        )
-        .scalar() or 0
-    )
+        return q.scalar() or 0
 
     return MessageUsageSchema(
-        sms_used=sms_used,
+        sms_used=_count("sms"),
         sms_limit=limits["sms"],
-        whatsapp_used=whatsapp_used,
+        whatsapp_used=_count("whatsapp"),
         whatsapp_limit=limits["whatsapp"],
         plan=plan,
     )

@@ -72,7 +72,9 @@ def create_event(
     event = Event(
         **data.model_dump(),
         public_token=secrets.token_urlsafe(32),
-        user_id=None if user.is_anonymous else user.id,
+        # Always populated — the AnonymousUser sentinel uses id='anonymous'
+        # in dev (require_auth=False); prod requests carry the real Supabase UUID.
+        user_id=user.id,
     )
     db.add(event)
     db.commit()

@@ -1,9 +1,18 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import httpx
+from ..auth import get_current_user
 from ..config import settings
 
-router = APIRouter(prefix="/api/users", tags=["users"])
+# Router-level auth dep — the invite endpoint forwards a Supabase
+# service-role-key-authenticated request, so we cannot leave it
+# accessible to anonymous callers (would let any visitor spam invites
+# into your Supabase project).
+router = APIRouter(
+    prefix="/api/users",
+    tags=["users"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 class InviteRequest(BaseModel):

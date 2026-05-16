@@ -24,6 +24,7 @@ from app.models.attendee import Attendee
 from app.models.event import Event
 from app.models.seating import SeatingArrangement, SeatAssignment
 from app.models.table import Table
+from app.routers.events import get_user_event
 
 logger = logging.getLogger("restaurant_share")
 
@@ -211,18 +212,19 @@ def _make_link(event: Event, variant: Variant) -> RestaurantShareLink:
 # ────────────────────────────────────────────────────────────────────────────
 
 @router.get("/api/events/{event_id}/restaurant-link/{variant}", response_model=RestaurantShareLink)
-def get_link(event_id: int, variant: Variant, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+def get_link(
+    variant: Variant,
+    event: Event = Depends(get_user_event),
+):
     return _make_link(event, variant)
 
 
 @router.post("/api/events/{event_id}/restaurant-link/{variant}", response_model=RestaurantShareLink)
-def generate_link(event_id: int, variant: Variant, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+def generate_link(
+    variant: Variant,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     setattr(event, _token_column(variant), secrets.token_urlsafe(32))
     db.commit()
     db.refresh(event)
@@ -230,25 +232,22 @@ def generate_link(event_id: int, variant: Variant, db: Session = Depends(get_db)
 
 
 @router.delete("/api/events/{event_id}/restaurant-link/{variant}", status_code=204)
-def revoke_link(event_id: int, variant: Variant, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+def revoke_link(
+    variant: Variant,
+    event: Event = Depends(get_user_event),
+    db: Session = Depends(get_db),
+):
     setattr(event, _token_column(variant), None)
     db.commit()
 
 
 @router.post("/api/events/{event_id}/restaurant-link/{variant}/send", response_model=RestaurantShareSendResponse)
 def send_link(
-    event_id: int,
     variant: Variant,
     data: RestaurantShareSendRequest,
+    event: Event = Depends(get_user_event),
     db: Session = Depends(get_db),
 ):
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-
     # Auto-generate the token for this variant if it doesn't exist yet
     if not getattr(event, _token_column(variant)):
         setattr(event, _token_column(variant), secrets.token_urlsafe(32))

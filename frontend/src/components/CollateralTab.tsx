@@ -479,7 +479,17 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
     const effectiveMode = seatingEventCount > 1 ? printSetMode : "reusable";
     setOrderAllEvents(effectiveMode === "per-event");
     setPrintPopupOpen(false);
-    setActiveView("name-cards");
+
+    // Open the checkout modal directly with the user's currently-
+    // selected AI design. The popup's rush + remove-branding ticks
+    // flow through via state and into PrintCheckoutModal's props.
+    // (The intermediate name-cards gallery view that used to live
+    // between Continue and checkout is now bypassed.)
+    const selectedIdx = selectedDesignByType[contentType];
+    if (selectedIdx === null) return;
+    const aiDesign = designsByType[contentType][selectedIdx];
+    if (!aiDesign) return;
+    setCheckoutAiDesign(aiDesign);
   };
 
   // Fetch base price for attendee count when entering name cards view or toggling all events
@@ -667,6 +677,8 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
                     dietary: a.dietary_requirements ?? null,
                   }))
             }
+            rush={printRushSelected}
+            removeBranding={printRemoveBranding}
             onClose={() => setCheckoutAiDesign(null)}
           />
         )}

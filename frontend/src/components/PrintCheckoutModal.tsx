@@ -43,6 +43,11 @@ interface Props {
   contentType: ContentType;
   design: PrintCheckoutDesign;
   attendees: PrintCheckoutAttendee[];
+  // Carried over from the upstream "Go to Print" popup, where the
+  // user ticked these add-ons. Server-side pricing adds them to the
+  // PaymentIntent amount, so the customer pays the displayed total.
+  rush?: boolean;
+  removeBranding?: boolean;
   onClose: () => void;
 }
 
@@ -53,6 +58,8 @@ export default function PrintCheckoutModal({
   contentType,
   design,
   attendees,
+  rush = false,
+  removeBranding = false,
   onClose,
 }: Props) {
   const [step, setStep] = useState<Step>("address");
@@ -84,9 +91,11 @@ export default function PrintCheckoutModal({
         event_id: eventId,
         content_type: contentType,
         quantity: attendees.length || 1,
-        turnaround_days: 7,
-        rush: false,
-        remove_branding: false,
+        // Rush shortens the production window (4 vs 7 business days)
+        // AND adds the rush surcharge; both happen in tandem.
+        turnaround_days: rush ? 4 : 7,
+        rush,
+        remove_branding: removeBranding,
         design,
         attendees,
         shipping: {

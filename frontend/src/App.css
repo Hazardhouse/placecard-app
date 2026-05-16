@@ -4368,6 +4368,11 @@ select:focus {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  /* Small horizontal padding so the selected-card border isn't flush
+     against the parent's content edge — without this, ancestor
+     containers can visually clip the left + right of the 3px border
+     even though box-sizing is border-box. */
+  padding: 0 4px;
 }
 .nc-gen-img {
   width: 100%;

@@ -184,48 +184,84 @@ export const api = {
   deleteScheduleItem: (eventId: number, itemId: number) =>
     request<void>(`/events/${eventId}/schedule/${itemId}`, { method: "DELETE" }),
 
-  // Print / 4over
+  // Print checkout — pricing-from-pricing.py + Stripe PaymentIntents.
+  // Manual fulfillment after webhook fires on payment_intent.succeeded.
   getPrintQuote: (data: {
+    country?: string;
+    content_type?: "tented-name-cards" | "name-cards" | "programs";
     quantity: number;
-    paper_stock: string;
-    finish: string;
-    color_spec: string;
-    turnaround_days: number;
+    paper_stock?: string;
+    finish?: string;
+    color_spec?: string;
+    rush?: boolean;
+    remove_branding?: boolean;
   }) =>
     request<{
-      base_price: number;
-      markup_amount: number;
-      total_price: number;
-      per_card_price: number;
-      quantity: number;
-      is_mock: boolean;
+      country: string;
+      currency: string;
+      quantity_tier: number;
+      base_amount: number;
+      rush_amount: number;
+      remove_branding_amount: number;
+      shipping_amount: number;
+      total_amount: number;
     }>("/print/quote", { method: "POST", body: JSON.stringify(data) }),
 
-  placePrintOrder: (data: {
+  // Create a Stripe PaymentIntent for a print order. Server computes
+  // the authoritative amount from pricing.py — client-sent totals are
+  // ignored. Returns the client_secret to hand to Stripe.js for the
+  // embedded card form.
+  createPrintIntent: (data: {
+    event_id: number;
+    content_type: "tented-name-cards" | "name-cards" | "programs";
     quantity: number;
-    paper_stock: string;
-    finish: string;
-    color_spec: string;
-    turnaround_days: number;
-    shipping_address: {
-      name: string;
-      company?: string;
-      address1: string;
-      address2?: string;
-      city: string;
-      state: string;
-      zip: string;
-      country: string;
+    paper_stock?: string;
+    finish?: string;
+    color_spec?: string;
+    turnaround_days?: number;
+    rush?: boolean;
+    remove_branding?: boolean;
+    design: {
+      image_b64: string;
+      mime_type: string;
+      description?: string | null;
+      views?: { image_b64: string; mime_type: string; label: string | null }[] | null;
     };
-    design_name: string;
-    event_id?: number;
+    attendees: { name: string; table_name?: string | null; dietary?: string | null }[];
+    shipping: {
+      name: string;
+      email: string;
+      company?: string | null;
+      address1: string;
+      address2?: string | null;
+      city: string;
+      state?: string | null;
+      zip: string;
+      country: "US" | "GB";
+    };
   }) =>
     request<{
-      job_id: string;
+      client_secret: string;
+      order_id: number;
+      total_amount_cents: number;
+      currency: string;
+    }>("/print/checkout/create-intent", { method: "POST", body: JSON.stringify(data) }),
+
+  // Used by the success page to confirm the order's status after the
+  // PaymentElement reports success — the webhook on the server side
+  // is what actually flips status to 'paid', so we poll this briefly.
+  getPrintOrder: (orderId: number) =>
+    request<{
+      id: number;
       status: string;
-      total_price: number;
-      is_mock: boolean;
-    }>("/print/order", { method: "POST", body: JSON.stringify(data) }),
+      total_amount_cents: number;
+      currency: string;
+      content_type: string;
+      quantity: number;
+      quantity_tier: number;
+      created_at: string;
+      paid_at: string | null;
+    }>(`/print/orders/${orderId}`),
 
   extractBrandColors: (url: string) =>
     request<{
@@ -269,24 +305,6 @@ export const api = {
       }[];
       model_used: string;
     }>("/cards/generate", { method: "POST", body: JSON.stringify(data) }),
-
-  validateAddress: (data: {
-    address1: string;
-    address2?: string;
-    city: string;
-    state: string;
-    zip: string;
-    country: string;
-  }) =>
-    request<{ valid: boolean; message?: string; is_mock?: boolean }>(
-      "/print/validate-address",
-      { method: "POST", body: JSON.stringify(data) },
-    ),
-
-  getOrderStatus: (jobId: string) =>
-    request<{ job_id: string; status: string; is_mock?: boolean }>(
-      `/print/order/${jobId}/status`,
-    ),
 
   // Notification Settings
   getNotificationSettings: () =>

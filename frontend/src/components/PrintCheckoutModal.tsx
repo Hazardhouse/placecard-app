@@ -1,0 +1,380 @@
+/**
+ * PrintCheckoutModal — Stripe-Elements-based checkout for print orders.
+ *
+ * 3 internal steps:
+ *   1. Address — name, email, shipping fields, country (UK default)
+ *   2. Payment — Stripe PaymentElement (card only on v1, no redirects)
+ *   3. Success — order confirmation
+ *
+ * The PaymentIntent is created server-side on Continue from step 1.
+ * Server recomputes the amount from pricing.py — client-sent totals
+ * are ignored. On payment_intent.succeeded the backend's Stripe
+ * webhook fires the operator fulfillment email with design files +
+ * attendee CSV attached.
+ */
+import { useState } from "react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { api } from "../api/client";
+
+const stripePublishableKey =
+  (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined) ?? "";
+
+// Module-level — loadStripe returns a Promise we want to reuse across renders.
+const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
+
+type ContentType = "tented-name-cards" | "name-cards" | "programs";
+
+export interface PrintCheckoutDesign {
+  image_b64: string;
+  mime_type: string;
+  description?: string | null;
+  views?: { image_b64: string; mime_type: string; label: string | null }[] | null;
+}
+
+export interface PrintCheckoutAttendee {
+  name: string;
+  table_name?: string | null;
+  dietary?: string | null;
+}
+
+interface Props {
+  eventId: number;
+  contentType: ContentType;
+  design: PrintCheckoutDesign;
+  attendees: PrintCheckoutAttendee[];
+  onClose: () => void;
+}
+
+type Step = "address" | "payment" | "success";
+
+export default function PrintCheckoutModal({
+  eventId,
+  contentType,
+  design,
+  attendees,
+  onClose,
+}: Props) {
+  const [step, setStep] = useState<Step>("address");
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [orderId, setOrderId] = useState<number | null>(null);
+  const [totalCents, setTotalCents] = useState(0);
+  const [currency, setCurrency] = useState("gbp");
+
+  // Shipping fields. UK default per the 2026-05-16 launch decision.
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [company, setCompany] = useState("");
+  const [address1, setAddress1] = useState("");
+  const [address2, setAddress2] = useState("");
+  const [city, setCity] = useState("");
+  const [stateField, setStateField] = useState("");
+  const [zip, setZip] = useState("");
+  const [country, setCountry] = useState<"US" | "GB">("GB");
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmitAddress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSubmitting(true);
+    try {
+      const result = await api.createPrintIntent({
+        event_id: eventId,
+        content_type: contentType,
+        quantity: attendees.length || 1,
+        turnaround_days: 7,
+        rush: false,
+        remove_branding: false,
+        design,
+        attendees,
+        shipping: {
+          name,
+          email,
+          company: company || null,
+          address1,
+          address2: address2 || null,
+          city,
+          state: country === "US" ? stateField : null,
+          zip,
+          country,
+        },
+      });
+      setClientSecret(result.client_secret);
+      setOrderId(result.order_id);
+      setTotalCents(result.total_amount_cents);
+      setCurrency(result.currency);
+      setStep("payment");
+    } catch (err: any) {
+      setError(err?.message ?? "Could not start checkout");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="modal-overlay" onClick={onClose} />
+      <div className="order-modal">
+        <div className="order-modal-header">
+          <h3>
+            {step === "address" && "Shipping address"}
+            {step === "payment" && "Payment"}
+            {step === "success" && "Order placed"}
+          </h3>
+          <button className="invite-close" onClick={onClose}>×</button>
+        </div>
+
+        <div className="order-modal-body">
+          {/* Design preview at the top of every step */}
+          <div className="order-design-preview">
+            <img
+              src={`data:${design.mime_type};base64,${design.image_b64}`}
+              alt="Selected design"
+              style={{ maxWidth: 200, borderRadius: 6, display: "block", margin: "0 auto" }}
+            />
+            <div className="order-preview-label">
+              {attendees.length} card{attendees.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          {step === "address" && (
+            <form id="pcm-address-form" onSubmit={handleSubmitAddress}>
+              <div className="order-field">
+                <label className="order-label">Country</label>
+                <select
+                  className="order-select"
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value as "US" | "GB")}
+                >
+                  <option value="GB">United Kingdom</option>
+                  <option value="US">United States</option>
+                </select>
+              </div>
+              <div className="order-field">
+                <label className="order-label">Shipping address</label>
+                <div className="order-address-grid">
+                  <input
+                    className="order-input"
+                    required
+                    placeholder="Recipient name *"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                  <input
+                    className="order-input"
+                    required
+                    type="email"
+                    placeholder="Email *"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                  <input
+                    className="order-input order-input-full"
+                    placeholder="Company (optional)"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                  />
+                  <input
+                    className="order-input order-input-full"
+                    required
+                    placeholder="Address line 1 *"
+                    value={address1}
+                    onChange={(e) => setAddress1(e.target.value)}
+                  />
+                  <input
+                    className="order-input order-input-full"
+                    placeholder="Address line 2"
+                    value={address2}
+                    onChange={(e) => setAddress2(e.target.value)}
+                  />
+                  <input
+                    className="order-input"
+                    required
+                    placeholder="City *"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                  />
+                  {country === "US" && (
+                    <input
+                      className="order-input order-input-sm"
+                      required
+                      placeholder="State *"
+                      value={stateField}
+                      onChange={(e) => setStateField(e.target.value)}
+                    />
+                  )}
+                  <input
+                    className="order-input order-input-sm"
+                    required
+                    placeholder={country === "US" ? "ZIP *" : "Postcode *"}
+                    value={zip}
+                    onChange={(e) => setZip(e.target.value)}
+                  />
+                </div>
+              </div>
+              {error && <div className="order-price-error">{error}</div>}
+            </form>
+          )}
+
+          {step === "payment" && clientSecret && stripePromise && (
+            <Elements
+              stripe={stripePromise}
+              options={{ clientSecret, appearance: { theme: "stripe" } }}
+            >
+              <PaymentStep
+                totalCents={totalCents}
+                currency={currency}
+                onSuccess={() => setStep("success")}
+                onError={(msg) => setError(msg)}
+              />
+            </Elements>
+          )}
+
+          {step === "payment" && !stripePromise && (
+            <div className="order-price-error">
+              Stripe publishable key is not configured.
+              Set <code>VITE_STRIPE_PUBLISHABLE_KEY</code> in Cloudflare Pages env, then redeploy.
+            </div>
+          )}
+
+          {step === "success" && (
+            <div className="order-confirmation">
+              <div className="order-confirmation-icon">✓</div>
+              <p className="order-confirmation-title">
+                Your print order has been placed.
+              </p>
+              <div className="order-confirmation-details">
+                <div className="order-detail-row">
+                  <span>Order</span>
+                  <strong>#{orderId}</strong>
+                </div>
+                <div className="order-detail-row">
+                  <span>Receipt</span>
+                  <strong>{email}</strong>
+                </div>
+                <p className="order-mock-notice" style={{ marginTop: 12 }}>
+                  You'll receive a Stripe receipt by email and we'll get your
+                  print files into production. Estimated delivery: 7 business days.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {step === "address" && (
+          <div className="order-modal-footer">
+            <button type="button" className="btn" onClick={onClose}>Cancel</button>
+            <button
+              type="submit"
+              form="pcm-address-form"
+              className="btn btn-primary"
+              disabled={submitting}
+            >
+              {submitting ? "Starting…" : "Continue to payment →"}
+            </button>
+          </div>
+        )}
+
+        {step === "success" && (
+          <div className="order-modal-footer">
+            <button className="btn btn-primary" onClick={onClose}>Done</button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function PaymentStep({
+  totalCents,
+  currency,
+  onSuccess,
+  onError,
+}: {
+  totalCents: number;
+  currency: string;
+  onSuccess: () => void;
+  onError: (msg: string) => void;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [submitting, setSubmitting] = useState(false);
+  const [localError, setLocalError] = useState("");
+
+  const handlePay = async () => {
+    if (!stripe || !elements) return;
+    setSubmitting(true);
+    setLocalError("");
+
+    const { error: submitError } = await elements.submit();
+    if (submitError) {
+      const msg = submitError.message ?? "Invalid card details";
+      setLocalError(msg);
+      onError(msg);
+      setSubmitting(false);
+      return;
+    }
+
+    const { error: confirmError, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      // No-redirect path: if the user picks a payment method that
+      // requires off-site auth (rare with card-only), we send them
+      // back to the same page rather than to a separate success page.
+      confirmParams: { return_url: window.location.href },
+      redirect: "if_required",
+    });
+
+    if (confirmError) {
+      const msg = confirmError.message ?? "Payment failed";
+      setLocalError(msg);
+      onError(msg);
+      setSubmitting(false);
+      return;
+    }
+
+    if (paymentIntent && paymentIntent.status === "succeeded") {
+      onSuccess();
+      return;
+    }
+
+    const msg = `Unexpected payment status: ${paymentIntent?.status ?? "unknown"}`;
+    setLocalError(msg);
+    onError(msg);
+    setSubmitting(false);
+  };
+
+  const symbol = currency.toLowerCase() === "gbp" ? "£" : "$";
+  const amount = (totalCents / 100).toFixed(2);
+
+  return (
+    <>
+      <div className="order-price-area">
+        <div className="order-price-display">
+          <div className="order-price-row order-price-total">
+            <span>Total</span>
+            <strong>
+              {symbol}
+              {amount}
+            </strong>
+          </div>
+        </div>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <PaymentElement />
+      </div>
+      {localError && <div className="order-price-error">{localError}</div>}
+      <div className="order-modal-footer" style={{ marginTop: 16 }}>
+        <button
+          className="btn btn-primary"
+          onClick={handlePay}
+          disabled={!stripe || !elements || submitting}
+          style={{ minWidth: 180 }}
+        >
+          {submitting ? "Processing…" : `Pay ${symbol}${amount}`}
+        </button>
+      </div>
+    </>
+  );
+}

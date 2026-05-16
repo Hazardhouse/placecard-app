@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api } from "../api/client";
 import type { ScheduleItem, SeatingArrangement, Table, Attendee } from "../types";
+import PrintCheckoutModal from "./PrintCheckoutModal";
 
 interface Props {
   eventId: number;
@@ -61,56 +62,6 @@ function detectCategory(eventCategory: string | null | undefined, venueType?: st
   return "corporate";
 }
 
-const CARD_DESIGNS: Record<DesignCategory, { name: string; font: string; bg: string; color: string; accent: string }[]> = {
-  corporate: [
-    { name: "Executive", font: "'Helvetica Neue', sans-serif", bg: "#ffffff", color: "#0f172a", accent: "#1e40af" },
-    { name: "Boardroom", font: "'Georgia', serif", bg: "#ffffff", color: "#1e293b", accent: "#475569" },
-    { name: "Modern Mono", font: "'SF Mono', 'Courier New', monospace", bg: "#ffffff", color: "#0f172a", accent: "#6366f1" },
-    { name: "Navy Formal", font: "'Times New Roman', serif", bg: "#ffffff", color: "#0c4a6e", accent: "#1e3a5f" },
-    { name: "Slate Clean", font: "'Helvetica Neue', sans-serif", bg: "#ffffff", color: "#334155", accent: "#94a3b8" },
-    { name: "Steel Blue", font: "'Georgia', serif", bg: "#ffffff", color: "#1e3a5f", accent: "#3b82f6" },
-    { name: "Charcoal Pro", font: "'Helvetica Neue', sans-serif", bg: "#ffffff", color: "#18181b", accent: "#52525b" },
-    { name: "Carbon", font: "'Georgia', serif", bg: "#ffffff", color: "#27272a", accent: "#71717a" },
-    { name: "Black & Gold", font: "'Georgia', serif", bg: "#0f0f0f", color: "#d4a574", accent: "#b8860b" },
-    { name: "Midnight", font: "'Helvetica Neue', sans-serif", bg: "#0f172a", color: "#e2e8f0", accent: "#3b82f6" },
-  ],
-  retreat: [
-    { name: "Forest", font: "'Garamond', 'Palatino', serif", bg: "#ffffff", color: "#14532d", accent: "#16a34a" },
-    { name: "Earth Tone", font: "'Georgia', serif", bg: "#ffffff", color: "#78350f", accent: "#a16207" },
-    { name: "Mountain", font: "'Helvetica Neue', sans-serif", bg: "#ffffff", color: "#365314", accent: "#65a30d" },
-    { name: "Desert Sand", font: "'Georgia', serif", bg: "#ffffff", color: "#7c2d12", accent: "#c2410c" },
-    { name: "Ocean Breeze", font: "'Garamond', 'Palatino', serif", bg: "#ffffff", color: "#164e63", accent: "#0891b2" },
-    { name: "Sage", font: "'Helvetica Neue', sans-serif", bg: "#ffffff", color: "#3f6212", accent: "#84cc16" },
-    { name: "Terracotta", font: "'Georgia', serif", bg: "#ffffff", color: "#9a3412", accent: "#ea580c" },
-    { name: "Sunrise", font: "'Garamond', 'Palatino', serif", bg: "#ffffff", color: "#92400e", accent: "#f59e0b" },
-    { name: "Night Sky", font: "'Garamond', 'Palatino', serif", bg: "#1a1a2e", color: "#c4b5a0", accent: "#8b7355" },
-    { name: "Campfire", font: "'Georgia', serif", bg: "#1c1410", color: "#e2c28e", accent: "#c9a84c" },
-  ],
-  wedding: [
-    { name: "Script Elegant", font: "'Brush Script MT', 'Segoe Script', cursive", bg: "#ffffff", color: "#78350f", accent: "#b8860b" },
-    { name: "Rose", font: "'Brush Script MT', 'Segoe Script', cursive", bg: "#ffffff", color: "#881337", accent: "#e11d48" },
-    { name: "Lavender", font: "'Brush Script MT', 'Segoe Script', cursive", bg: "#ffffff", color: "#581c87", accent: "#a855f7" },
-    { name: "Classic Ivory", font: "'Garamond', 'Palatino', serif", bg: "#ffffff", color: "#44403c", accent: "#a8a29e" },
-    { name: "Script Indigo", font: "'Brush Script MT', 'Segoe Script', cursive", bg: "#ffffff", color: "#312e81", accent: "#6366f1" },
-    { name: "Blush", font: "'Brush Script MT', 'Segoe Script', cursive", bg: "#ffffff", color: "#9f1239", accent: "#fb7185" },
-    { name: "Champagne", font: "'Garamond', 'Palatino', serif", bg: "#ffffff", color: "#78716c", accent: "#d6d3d1" },
-    { name: "Garden Party", font: "'Brush Script MT', 'Segoe Script', cursive", bg: "#ffffff", color: "#166534", accent: "#4ade80" },
-    { name: "Gold Luxe", font: "'Brush Script MT', 'Segoe Script', cursive", bg: "#1a1814", color: "#e2c28e", accent: "#c9a84c" },
-    { name: "Noir Elegance", font: "'Garamond', 'Palatino', serif", bg: "#0f0f0f", color: "#e7e5e4", accent: "#a8a29e" },
-  ],
-  social: [
-    { name: "Bistro", font: "'Georgia', serif", bg: "#ffffff", color: "#7c2d12", accent: "#dc2626" },
-    { name: "Happy Hour", font: "'Helvetica Neue', sans-serif", bg: "#ffffff", color: "#4338ca", accent: "#818cf8" },
-    { name: "Copper", font: "'Georgia', serif", bg: "#ffffff", color: "#78350f", accent: "#b45309" },
-    { name: "Neon", font: "'Helvetica Neue', sans-serif", bg: "#ffffff", color: "#701a75", accent: "#d946ef" },
-    { name: "Fresh Lime", font: "'Helvetica Neue', sans-serif", bg: "#ffffff", color: "#166534", accent: "#22c55e" },
-    { name: "Warm Amber", font: "'Georgia', serif", bg: "#ffffff", color: "#92400e", accent: "#f59e0b" },
-    { name: "Berry", font: "'Georgia', serif", bg: "#ffffff", color: "#831843", accent: "#ec4899" },
-    { name: "Teal Pop", font: "'Helvetica Neue', sans-serif", bg: "#ffffff", color: "#134e4a", accent: "#14b8a6" },
-    { name: "Dark Lounge", font: "'Georgia', serif", bg: "#1a1a1a", color: "#fbbf24", accent: "#d97706" },
-    { name: "Velvet", font: "'Georgia', serif", bg: "#1c0a2e", color: "#e9d5ff", accent: "#a78bfa" },
-  ],
-};
 
 
 interface GuestMeal {
@@ -228,323 +179,6 @@ function GeneratedDesignCard({ image, designNumber, selected, onToggle, groupNam
   );
 }
 
-// ── Order Modal ────────────────────────────────────────────────────
-
-interface OrderModalProps {
-  design: typeof CARD_DESIGNS["corporate"][0];
-  guest: GuestCardData;
-  attendeeCount: number;
-  onClose: () => void;
-}
-
-const PAPER_STOCKS = ["14PT C2S", "14PT Uncoated", "16PT C2S", "18PT C1S", "100LB Cover Linen"];
-const FINISHES = ["No coating", "UV Front", "Matte", "Aqueous", "Satin Aqueous"];
-const COLOR_SPECS = [
-  { value: "4/4", label: "4/4 Full Color Both Sides (recommended)" },
-  { value: "4/1", label: "4/1 Full Color Front, B&W Back" },
-  { value: "4/0", label: "4/0 Full Color Front Only" },
-];
-
-type QuantityMode = "exact" | "plus10" | "plus25" | "custom";
-
-function OrderModal({ design, guest, attendeeCount, onClose }: OrderModalProps) {
-  const [quantityMode, setQuantityMode] = useState<QuantityMode>("plus10");
-  const [customQty, setCustomQty] = useState(attendeeCount);
-  const [paperStock, setPaperStock] = useState("14PT C2S");
-  const [finish, setFinish] = useState("No coating");
-  const [colorSpec, setColorSpec] = useState("4/4");
-  const [turnaround, setTurnaround] = useState(7);
-
-  // Shipping address
-  const [shipName, setShipName] = useState("");
-  const [shipCompany, setShipCompany] = useState("");
-  const [shipAddress1, setShipAddress1] = useState("");
-  const [shipAddress2, setShipAddress2] = useState("");
-  const [shipCity, setShipCity] = useState("");
-  const [shipState, setShipState] = useState("");
-  const [shipZip, setShipZip] = useState("");
-  const [shipCountry, setShipCountry] = useState("US");
-
-  // Quote state
-  const [quote, setQuote] = useState<{
-    total_price: number;
-    per_card_price: number;
-    quantity: number;
-    is_mock: boolean;
-  } | null>(null);
-  const [quoteLoading, setQuoteLoading] = useState(false);
-  const [quoteError, setQuoteError] = useState("");
-
-  // Order state
-  const [orderSubmitting, setOrderSubmitting] = useState(false);
-  const [orderResult, setOrderResult] = useState<{
-    job_id: string;
-    status: string;
-    total_price: number;
-    is_mock: boolean;
-  } | null>(null);
-  const [orderError, setOrderError] = useState("");
-
-  const computedQuantity = (() => {
-    switch (quantityMode) {
-      case "exact": return attendeeCount;
-      case "plus10": return Math.ceil(attendeeCount * 1.1);
-      case "plus25": return Math.ceil(attendeeCount * 1.25);
-      case "custom": return customQty;
-    }
-  })();
-
-  // Auto-fetch price whenever specs change
-  const fetchQuote = useCallback(async () => {
-    setQuoteLoading(true);
-    setQuoteError("");
-    try {
-      const result = await api.getPrintQuote({
-        quantity: computedQuantity,
-        paper_stock: paperStock,
-        finish,
-        color_spec: colorSpec,
-        turnaround_days: turnaround,
-      });
-      setQuote(result);
-    } catch (err: any) {
-      setQuoteError(err.message || "Failed to get quote");
-    } finally {
-      setQuoteLoading(false);
-    }
-  }, [computedQuantity, paperStock, finish, colorSpec, turnaround]);
-
-  useEffect(() => {
-    fetchQuote();
-  }, [fetchQuote]);
-
-  const handlePlaceOrder = async () => {
-    setOrderSubmitting(true);
-    setOrderError("");
-    try {
-      const result = await api.placePrintOrder({
-        quantity: computedQuantity,
-        paper_stock: paperStock,
-        finish,
-        color_spec: colorSpec,
-        turnaround_days: turnaround,
-        shipping_address: {
-          name: shipName,
-          company: shipCompany || undefined,
-          address1: shipAddress1,
-          address2: shipAddress2 || undefined,
-          city: shipCity,
-          state: shipState,
-          zip: shipZip,
-          country: shipCountry,
-        },
-        design_name: design.name,
-      });
-      setOrderResult(result);
-    } catch (err: any) {
-      setOrderError(err.message || "Failed to place order");
-    } finally {
-      setOrderSubmitting(false);
-    }
-  };
-
-  const shippingComplete = shipName && shipAddress1 && shipCity && shipState && shipZip;
-
-  // Order confirmation view
-  if (orderResult) {
-    return (
-      <>
-        <div className="modal-overlay" onClick={onClose} />
-        <div className="order-modal">
-          <div className="order-modal-header">
-            <h3>Order Submitted</h3>
-            <button className="invite-close" onClick={onClose}>x</button>
-          </div>
-          <div className="order-modal-body">
-            <div className="order-confirmation">
-              <div className="order-confirmation-icon">&#10003;</div>
-              <p className="order-confirmation-title">Your print order has been placed!</p>
-              <div className="order-confirmation-details">
-                <div className="order-detail-row">
-                  <span>Order ID</span>
-                  <strong>{orderResult.job_id}</strong>
-                </div>
-                <div className="order-detail-row">
-                  <span>Status</span>
-                  <strong>{orderResult.status}</strong>
-                </div>
-                <div className="order-detail-row">
-                  <span>Total</span>
-                  <strong>${orderResult.total_price.toFixed(2)}</strong>
-                </div>
-                {orderResult.is_mock && (
-                  <p className="order-mock-notice">
-                    This is a test order. No payment has been charged. Connect your 4over API keys in settings to place real orders.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="order-modal-footer">
-            <button className="btn btn-primary" onClick={onClose}>Done</button>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <div className="modal-overlay" onClick={onClose} />
-      <div className="order-modal">
-        <div className="order-modal-header">
-          <h3>Order Name Cards</h3>
-          <button className="invite-close" onClick={onClose}>x</button>
-        </div>
-        <div className="order-modal-body">
-          {/* Design preview */}
-          <div className="order-design-preview">
-            <div
-              className="order-preview-card"
-              style={{
-                fontFamily: design.font,
-                background: design.bg,
-                color: design.color,
-                borderColor: design.accent + "40",
-              }}
-            >
-              <div className="order-preview-name" style={{ color: design.color }}>{guest.name}</div>
-              <div className="order-preview-table" style={{ color: design.accent }}>{guest.tableName}</div>
-            </div>
-            <div className="order-preview-label">{design.name}</div>
-          </div>
-
-          {/* Quantity */}
-          <div className="order-field">
-            <label className="order-label">Quantity <span className="order-hint">({attendeeCount} attendees seated)</span></label>
-            <div className="order-qty-options">
-              {([
-                ["exact", `Exact (${attendeeCount})`],
-                ["plus10", `+10% (${Math.ceil(attendeeCount * 1.1)})`],
-                ["plus25", `+25% (${Math.ceil(attendeeCount * 1.25)})`],
-                ["custom", "Custom"],
-              ] as [QuantityMode, string][]).map(([mode, label]) => (
-                <button
-                  key={mode}
-                  className={`order-qty-btn ${quantityMode === mode ? "active" : ""}`}
-                  onClick={() => setQuantityMode(mode)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {quantityMode === "custom" && (
-              <input
-                type="number"
-                className="order-input"
-                min={1}
-                value={customQty}
-                onChange={e => setCustomQty(Math.max(1, parseInt(e.target.value) || 1))}
-              />
-            )}
-          </div>
-
-          {/* Paper stock */}
-          <div className="order-field">
-            <label className="order-label">Paper Stock</label>
-            <select className="order-select" value={paperStock} onChange={e => setPaperStock(e.target.value)}>
-              {PAPER_STOCKS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-
-          {/* Finish */}
-          <div className="order-field">
-            <label className="order-label">Finish</label>
-            <select className="order-select" value={finish} onChange={e => setFinish(e.target.value)}>
-              {FINISHES.map(f => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </div>
-
-          {/* Color spec */}
-          <div className="order-field">
-            <label className="order-label">Color</label>
-            <select className="order-select" value={colorSpec} onChange={e => setColorSpec(e.target.value)}>
-              {COLOR_SPECS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
-          </div>
-
-          {/* Turnaround */}
-          <div className="order-field">
-            <label className="order-label">Turnaround Time</label>
-            <div className="order-turnaround-options">
-              <button
-                className={`order-qty-btn ${turnaround === 7 ? "active" : ""}`}
-                onClick={() => setTurnaround(7)}
-              >
-                7 Business Days
-              </button>
-              <button
-                className={`order-qty-btn ${turnaround === 4 ? "active" : ""}`}
-                onClick={() => setTurnaround(4)}
-              >
-                4 Business Days (Rush)
-              </button>
-            </div>
-          </div>
-
-          {/* Shipping address */}
-          <div className="order-field">
-            <label className="order-label">Shipping Address</label>
-            <div className="order-address-grid">
-              <input className="order-input" placeholder="Recipient Name *" value={shipName} onChange={e => setShipName(e.target.value)} />
-              <input className="order-input" placeholder="Company (optional)" value={shipCompany} onChange={e => setShipCompany(e.target.value)} />
-              <input className="order-input order-input-full" placeholder="Address Line 1 *" value={shipAddress1} onChange={e => setShipAddress1(e.target.value)} />
-              <input className="order-input order-input-full" placeholder="Address Line 2" value={shipAddress2} onChange={e => setShipAddress2(e.target.value)} />
-              <input className="order-input" placeholder="City *" value={shipCity} onChange={e => setShipCity(e.target.value)} />
-              <input className="order-input order-input-sm" placeholder="State *" value={shipState} onChange={e => setShipState(e.target.value)} />
-              <input className="order-input order-input-sm" placeholder="ZIP *" value={shipZip} onChange={e => setShipZip(e.target.value)} />
-              <input className="order-input order-input-sm" placeholder="Country" value={shipCountry} onChange={e => setShipCountry(e.target.value)} />
-            </div>
-          </div>
-
-          {/* Live Price area — updates automatically */}
-          <div className="order-price-area">
-            {quoteLoading && <div className="order-price-loading">Updating price...</div>}
-            {quoteError && <div className="order-price-error">{quoteError}</div>}
-            {quote && !quoteLoading && (
-              <div className="order-price-display">
-                <div className="order-price-row order-price-total">
-                  <span>Total ({quote.quantity} cards)</span>
-                  <strong>${quote.total_price.toFixed(2)}</strong>
-                </div>
-                <div className="order-price-row order-price-per">
-                  <span>Per card</span>
-                  <span>${quote.per_card_price.toFixed(2)}</span>
-                </div>
-                {quote.is_mock && (
-                  <div className="order-mock-badge">Estimated pricing (API keys not configured)</div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="order-modal-footer">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            disabled={!quote || !shippingComplete || orderSubmitting}
-            onClick={handlePlaceOrder}
-          >
-            {orderSubmitting ? "Placing Order..." : "Place Order"}
-          </button>
-          {orderError && <div className="order-price-error">{orderError}</div>}
-        </div>
-      </div>
-    </>
-  );
-}
-
 export type ContentType = "tented-name-cards" | "name-cards" | "programs";
 
 // Print-pricing tiers from 4over (retail prices customers see).
@@ -631,7 +265,9 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
     arrangements.length > 0 ? arrangements[0].id : 0
   );
   const [selectedCategory] = useState<DesignCategory>(detectCategory(eventCategory, eventVenueType));
-  const [orderDesign, setOrderDesign] = useState<typeof CARD_DESIGNS["corporate"][0] | null>(null);
+  // Holds the AI-generated design the user is currently ordering.
+  // null = no checkout open; non-null = PrintCheckoutModal renders.
+  const [checkoutAiDesign, setCheckoutAiDesign] = useState<Design | null>(null);
 
   // Canva-style redesign state
   const [aiTab, setAiTab] = useState<"designs" | "ai">("ai");
@@ -855,14 +491,18 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
       return;
     }
     setBasePriceLoading(true);
+    // Header price preview uses the modal-default country (GB) so the
+    // figure matches what the user sees when they actually open the
+    // checkout. Recomputed on the address step using their real country.
     api.getPrintQuote({
+      country: "GB",
+      content_type: "tented-name-cards",
       quantity: cardQuantity,
       paper_stock: "14PT C2S",
       finish: "No coating",
       color_spec: "4/4",
-      turnaround_days: 7,
     })
-      .then(r => { setBaseTotalPrice(r.total_price); setBaseQuantity(r.quantity); })
+      .then(r => { setBaseTotalPrice(r.total_amount); setBaseQuantity(r.quantity_tier); })
       .catch(() => {})
       .finally(() => setBasePriceLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -901,19 +541,6 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
         }
       : { name: "Jane Smith", tableName: "Table 1", dietary: "Vegetarian" });
 
-  // Generate custom designs from brand colors
-  const brandDesigns = brandColors.map((color, i) => ({
-    name: `Brand ${i + 1}`,
-    font: i % 2 === 0 ? "'Georgia', serif" : "'Brush Script MT', 'Segoe Script', cursive",
-    bg: "#ffffff",
-    color: color,
-    accent: color,
-  }));
-
-  // Combine brand designs with category-specific defaults
-  const categoryDesigns = CARD_DESIGNS[selectedCategory];
-  const allDesigns = brandDesigns.length > 0 ? [...brandDesigns, ...categoryDesigns] : categoryDesigns;
-
   if (activeView === "name-cards") {
     return (
       <div className="collateral-tab">
@@ -932,9 +559,28 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
             {basePriceLoading && <span className="nc-order-info">...</span>}
             <button
               className="btn btn-primary nc-order-btn-lg"
-              onClick={() => setOrderDesign(allDesigns[0])}
-              disabled={attendees.length === 0}
-              style={attendees.length === 0 ? { opacity: 0.5, cursor: "not-allowed" } : {}}
+              onClick={() => {
+                // Find the user's currently-selected AI design from
+                // the gallery. Without one, there's nothing to print.
+                const selectedIdx = selectedDesignByType[contentType];
+                if (selectedIdx === null) return;
+                const aiDesign = designsByType[contentType][selectedIdx];
+                if (!aiDesign) return;
+                setCheckoutAiDesign(aiDesign);
+              }}
+              disabled={attendees.length === 0 || selectedDesignByType[contentType] === null}
+              title={
+                attendees.length === 0
+                  ? "Add attendees first"
+                  : selectedDesignByType[contentType] === null
+                    ? "Select a design from PlaceCard AI first"
+                    : ""
+              }
+              style={
+                attendees.length === 0 || selectedDesignByType[contentType] === null
+                  ? { opacity: 0.5, cursor: "not-allowed" }
+                  : {}
+              }
             >
               Order Now
             </button>
@@ -998,12 +644,30 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
           </div>
         )}
 
-        {orderDesign && (
-          <OrderModal
-            design={orderDesign}
-            guest={sampleGuest}
-            attendeeCount={guestCards.length || 1}
-            onClose={() => setOrderDesign(null)}
+        {checkoutAiDesign && (
+          <PrintCheckoutModal
+            eventId={eventId}
+            contentType={contentType}
+            design={{
+              image_b64: checkoutAiDesign.image_b64,
+              mime_type: checkoutAiDesign.mime_type,
+              description: checkoutAiDesign.description,
+              views: checkoutAiDesign.views ?? null,
+            }}
+            attendees={
+              guestCards.length > 0
+                ? guestCards.map(g => ({
+                    name: g.name,
+                    table_name: g.tableName,
+                    dietary: g.dietary ?? null,
+                  }))
+                : attendees.map(a => ({
+                    name: a.name,
+                    table_name: null,
+                    dietary: a.dietary_requirements ?? null,
+                  }))
+            }
+            onClose={() => setCheckoutAiDesign(null)}
           />
         )}
       </div>

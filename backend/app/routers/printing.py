@@ -215,7 +215,12 @@ def create_intent(
         intent = stripe.PaymentIntent.create(
             amount=total_cents,
             currency=currency_iso.lower(),
-            automatic_payment_methods={"enabled": True},
+            # Card-only on v1. With automatic_payment_methods Stripe
+            # would show PayPal / iDEAL / etc., some of which redirect
+            # the user away from our modal. Card stays embedded.
+            # Revisit when we want Apple Pay / Google Pay / Link, all
+            # of which are no-redirect but require the automatic path.
+            payment_method_types=["card"],
             description=f"PlaceCard print order #{order.id} — {data.quantity} {data.content_type}",
             metadata={
                 "order_id": str(order.id),

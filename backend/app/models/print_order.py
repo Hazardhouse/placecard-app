@@ -74,6 +74,15 @@ class PrintOrder(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     fulfillment_notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # Shipping tracking. Set when the operator (or eventually a
+    # print-vendor API) marks the order shipped. tracking_url is
+    # optional convenience — the carrier's deep-link to track this
+    # specific package. If absent, the frontend builds a fallback
+    # search URL from carrier + tracking_number.
+    tracking_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    tracking_carrier: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    tracking_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     fulfilled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

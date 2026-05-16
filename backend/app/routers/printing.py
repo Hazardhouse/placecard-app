@@ -250,6 +250,49 @@ def create_intent(
     )
 
 
+def _order_to_response(order: PrintOrder, db: Session) -> PrintOrderResponse:
+    event_name: Optional[str] = None
+    if order.event_id:
+        event = db.query(Event).filter(Event.id == order.event_id).first()
+        if event:
+            event_name = event.name
+    return PrintOrderResponse(
+        id=order.id,
+        status=order.status,
+        total_amount_cents=order.total_amount_cents,
+        currency=order.currency,
+        content_type=order.content_type,
+        quantity=order.quantity,
+        quantity_tier=order.quantity_tier,
+        event_id=order.event_id,
+        event_name=event_name,
+        shipping_name=order.shipping_name,
+        shipping_city=order.shipping_city,
+        shipping_country=order.shipping_country,
+        tracking_number=order.tracking_number,
+        tracking_carrier=order.tracking_carrier,
+        tracking_url=order.tracking_url,
+        created_at=order.created_at.isoformat(),
+        paid_at=order.paid_at.isoformat() if order.paid_at else None,
+        fulfilled_at=order.fulfilled_at.isoformat() if order.fulfilled_at else None,
+    )
+
+
+@router.get("/orders", response_model=List[PrintOrderResponse])
+def list_orders(
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List the caller's print orders, newest first. Drives the
+    'Orders' section under Account → Billing.
+    """
+    q = db.query(PrintOrder)
+    if not user.is_anonymous:
+        q = q.filter(PrintOrder.user_id == user.id)
+    orders = q.order_by(PrintOrder.created_at.desc()).all()
+    return [_order_to_response(o, db) for o in orders]
+
+
 @router.get("/orders/{order_id}", response_model=PrintOrderResponse)
 def get_order(
     order_id: int,
@@ -263,14 +306,4 @@ def get_order(
     order = q.first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    return PrintOrderResponse(
-        id=order.id,
-        status=order.status,
-        total_amount_cents=order.total_amount_cents,
-        currency=order.currency,
-        content_type=order.content_type,
-        quantity=order.quantity,
-        quantity_tier=order.quantity_tier,
-        created_at=order.created_at.isoformat(),
-        paid_at=order.paid_at.isoformat() if order.paid_at else None,
-    )
+    return _order_to_response(order, db)

@@ -94,11 +94,20 @@ class CreateIntentResponse(BaseModel):
 
 class PrintOrderResponse(BaseModel):
     id: int
-    status: str
+    status: str  # 'pending' | 'paid' | 'failed' | 'fulfilled'
     total_amount_cents: int
     currency: str
     content_type: str
     quantity: int
     quantity_tier: int
+    event_id: int
+    event_name: Optional[str] = None
+    shipping_name: str
+    shipping_city: str
+    shipping_country: str
+    tracking_number: Optional[str] = None
+    tracking_carrier: Optional[str] = None
+    tracking_url: Optional[str] = None
     created_at: str
     paid_at: Optional[str] = None
+    fulfilled_at: Optional[str] = None

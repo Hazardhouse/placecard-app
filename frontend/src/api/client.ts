@@ -259,9 +259,41 @@ export const api = {
       content_type: string;
       quantity: number;
       quantity_tier: number;
+      event_id: number;
+      event_name: string | null;
+      shipping_name: string;
+      shipping_city: string;
+      shipping_country: string;
+      tracking_number: string | null;
+      tracking_carrier: string | null;
+      tracking_url: string | null;
       created_at: string;
       paid_at: string | null;
+      fulfilled_at: string | null;
     }>(`/print/orders/${orderId}`),
+
+  // Drives the Account → Billing → Orders list.
+  listPrintOrders: () =>
+    request<{
+      id: number;
+      status: string;
+      total_amount_cents: number;
+      currency: string;
+      content_type: string;
+      quantity: number;
+      quantity_tier: number;
+      event_id: number;
+      event_name: string | null;
+      shipping_name: string;
+      shipping_city: string;
+      shipping_country: string;
+      tracking_number: string | null;
+      tracking_carrier: string | null;
+      tracking_url: string | null;
+      created_at: string;
+      paid_at: string | null;
+      fulfilled_at: string | null;
+    }[]>(`/print/orders`),
 
   extractBrandColors: (url: string) =>
     request<{

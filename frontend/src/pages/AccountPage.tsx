@@ -500,6 +500,7 @@ export default function AccountPage() {
                 <p className="account-billing-desc">Visa ending in 4242</p>
                 <button className="btn btn-sm">Update</button>
               </div>
+              <PrintOrdersSection />
             </div>
           )}
 
@@ -681,6 +682,148 @@ export default function AccountPage() {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ── Print Orders section ──────────────────────────────────────────────
+//
+// Lives inside the Billing tab. Lists the current user's print orders
+// newest-first, with cost, status, and a tracking link when available.
+// Status flips happen server-side: pending → paid (Stripe webhook),
+// paid → fulfilled (operator marks tracking via the printing router
+// — automated when the print-vendor API integration lands).
+
+interface PrintOrderRow {
+  id: number;
+  status: string;
+  total_amount_cents: number;
+  currency: string;
+  content_type: string;
+  quantity: number;
+  quantity_tier: number;
+  event_id: number;
+  event_name: string | null;
+  shipping_name: string;
+  shipping_city: string;
+  shipping_country: string;
+  tracking_number: string | null;
+  tracking_carrier: string | null;
+  tracking_url: string | null;
+  created_at: string;
+  paid_at: string | null;
+  fulfilled_at: string | null;
+}
+
+function formatOrderMoney(cents: number, currency: string): string {
+  const symbol = currency.toUpperCase() === "GBP" ? "£" : "$";
+  return `${symbol}${(cents / 100).toFixed(2)}`;
+}
+
+function orderStatusLabel(status: string): { label: string; color: string } {
+  switch (status) {
+    case "pending":   return { label: "Pending payment", color: "#f59e0b" };
+    case "paid":      return { label: "Paid · awaiting fulfilment", color: "#1b4fff" };
+    case "fulfilled": return { label: "Shipped", color: "#16a34a" };
+    case "failed":    return { label: "Payment failed", color: "#dc2626" };
+    default:          return { label: status, color: "#64748b" };
+  }
+}
+
+function trackingHref(order: PrintOrderRow): string | null {
+  if (!order.tracking_number) return null;
+  if (order.tracking_url) return order.tracking_url;
+  // Fallback when the operator entered the number + carrier but not
+  // the deep-link URL: build a generic search.
+  const q = encodeURIComponent(
+    `${order.tracking_carrier ?? ""} tracking ${order.tracking_number}`.trim()
+  );
+  return `https://www.google.com/search?q=${q}`;
+}
+
+function PrintOrdersSection() {
+  const [orders, setOrders] = useState<PrintOrderRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listPrintOrders()
+      .then(setOrders)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="account-billing-card" style={{ marginTop: 16 }}>
+        <h3>Orders</h3>
+        <p className="account-billing-desc">Loading…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="account-billing-card" style={{ marginTop: 16 }}>
+        <h3>Orders</h3>
+        <p style={{ color: "#dc2626", fontSize: 14, margin: 0 }}>Could not load orders: {error}</p>
+      </div>
+    );
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="account-billing-card" style={{ marginTop: 16 }}>
+        <h3>Orders</h3>
+        <p className="account-billing-desc">You haven't placed any print orders yet. Once you do, they'll show up here with their status and tracking info.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="account-billing-card" style={{ marginTop: 16 }}>
+      <h3>Orders</h3>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #e2e8f0", textAlign: "left" }}>
+              <th style={{ padding: "8px 6px", fontWeight: 600, color: "#64748b", fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em" }}>Order</th>
+              <th style={{ padding: "8px 6px", fontWeight: 600, color: "#64748b", fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em" }}>Event</th>
+              <th style={{ padding: "8px 6px", fontWeight: 600, color: "#64748b", fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em" }}>Date</th>
+              <th style={{ padding: "8px 6px", fontWeight: 600, color: "#64748b", fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em" }}>Total</th>
+              <th style={{ padding: "8px 6px", fontWeight: 600, color: "#64748b", fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em" }}>Status</th>
+              <th style={{ padding: "8px 6px", fontWeight: 600, color: "#64748b", fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em" }}>Tracking</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map(o => {
+              const status = orderStatusLabel(o.status);
+              const trackHref = trackingHref(o);
+              return (
+                <tr key={o.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  <td style={{ padding: "10px 6px" }}>#{o.id}</td>
+                  <td style={{ padding: "10px 6px", color: "#475569" }}>{o.event_name ?? "—"}</td>
+                  <td style={{ padding: "10px 6px", color: "#475569" }}>{new Date(o.created_at).toLocaleDateString()}</td>
+                  <td style={{ padding: "10px 6px" }}>{formatOrderMoney(o.total_amount_cents, o.currency)}</td>
+                  <td style={{ padding: "10px 6px" }}>
+                    <span style={{ color: status.color, fontWeight: 500 }}>{status.label}</span>
+                  </td>
+                  <td style={{ padding: "10px 6px" }}>
+                    {trackHref ? (
+                      <a href={trackHref} target="_blank" rel="noopener noreferrer" style={{ color: "#1b4fff" }}>
+                        {o.tracking_carrier ?? "Track"} {o.tracking_number}
+                      </a>
+                    ) : (
+                      <span style={{ color: "#94a3b8" }}>—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

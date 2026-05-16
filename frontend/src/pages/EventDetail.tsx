@@ -6,7 +6,7 @@ import AttendeeList from "../components/AttendeeList";
 import SeatingBoard from "../components/SeatingBoard";
 import ScheduleTab from "../components/ScheduleTab";
 import EventMapCard from "../components/EventMapCard";
-import CollateralTab, { type DesignsByType, type SelectedDesignByType } from "../components/CollateralTab";
+import CollateralTab, { type DesignsByType, type SelectedDesignByType, type LatestGenerationCountByType } from "../components/CollateralTab";
 import FormBuilder from "../components/FormBuilder";
 import FormSendDialog from "../components/FormSendDialog";
 import RestaurantShareDialog from "../components/RestaurantShareDialog";
@@ -101,6 +101,17 @@ export default function EventDetail() {
     "tented-name-cards": null,
     "name-cards": null,
     programs: null,
+  });
+  // Session-scoped — the PlaceCard AI tab shows only the most recent
+  // generation (top N slice of designsByType). Lifted here so a switch
+  // between Attendees and Collateral within the same event doesn't lose
+  // the "what did I just generate" view, but starts fresh on a route
+  // change (which unmounts EventDetail) — at that point the user can
+  // pull the full history from the My Designs tab.
+  const [latestGenerationCountByType, setLatestGenerationCountByType] = useState<LatestGenerationCountByType>({
+    "tented-name-cards": 0,
+    "name-cards": 0,
+    programs: 0,
   });
 
   // ── Attendee edit drawer ──
@@ -902,6 +913,8 @@ export default function EventDetail() {
           onDesignsByTypeChange={setDesignsByType}
           selectedDesignByType={selectedDesignByType}
           onSelectedDesignByTypeChange={setSelectedDesignByType}
+          latestGenerationCountByType={latestGenerationCountByType}
+          onLatestGenerationCountByTypeChange={setLatestGenerationCountByType}
         />
       )}
 

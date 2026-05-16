@@ -24,6 +24,11 @@ interface Props {
   onDesignsByTypeChange?: React.Dispatch<React.SetStateAction<DesignsByType>>;
   selectedDesignByType?: SelectedDesignByType;
   onSelectedDesignByTypeChange?: React.Dispatch<React.SetStateAction<SelectedDesignByType>>;
+  // Session-scoped count of designs in the most recent generation per
+  // content_type. The PlaceCard AI tab slices the top N of designsByType
+  // using this; the My Designs tab ignores it and shows the whole gallery.
+  latestGenerationCountByType?: LatestGenerationCountByType;
+  onLatestGenerationCountByTypeChange?: React.Dispatch<React.SetStateAction<LatestGenerationCountByType>>;
 }
 
 type DesignCategory = "corporate" | "retreat" | "wedding" | "social";
@@ -568,6 +573,11 @@ export type Design = {
 };
 export type DesignsByType = Record<ContentType, Design[]>;
 export type SelectedDesignByType = Record<ContentType, number | null>;
+// Count of designs in the most recent generation per content_type.
+// The PlaceCard AI tab shows only this top slice (just-generated); the
+// My Designs tab reads the full accumulating gallery from DesignsByType.
+// Session-scoped — resets on EventDetail unmount.
+export type LatestGenerationCountByType = Record<ContentType, number>;
 
 interface ContentSpec {
   id: ContentType;
@@ -608,7 +618,7 @@ const CONTENT_SPECS: Record<ContentType, ContentSpec> = {
 
 const CONTENT_TYPES: ContentType[] = ["tented-name-cards", "programs"];
 
-export default function CollateralTab({ eventId, scheduleItems, arrangements, tables, attendees, eventCategory, eventVenueType, eventName, brandColors, brandFont, designsByType: designsByTypeProp, onDesignsByTypeChange, selectedDesignByType: selectedDesignByTypeProp, onSelectedDesignByTypeChange }: Props) {
+export default function CollateralTab({ eventId, scheduleItems, arrangements, tables, attendees, eventCategory, eventVenueType, eventName, brandColors, brandFont, designsByType: designsByTypeProp, onDesignsByTypeChange, selectedDesignByType: selectedDesignByTypeProp, onSelectedDesignByTypeChange, latestGenerationCountByType: latestGenerationCountByTypeProp, onLatestGenerationCountByTypeChange }: Props) {
   const [activeView, setActiveView] = useState<string | null>(null);
   const [selectedArrangementId, setSelectedArrangementId] = useState<number>(
     arrangements.length > 0 ? arrangements[0].id : 0
@@ -662,6 +672,13 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
   const setDesignsByType = onDesignsByTypeChange ?? setInternalDesignsByType;
   const selectedDesignByType = selectedDesignByTypeProp ?? internalSelectedDesignByType;
   const setSelectedDesignByType = onSelectedDesignByTypeChange ?? setInternalSelectedDesignByType;
+  const [internalLatestCount, setInternalLatestCount] = useState<LatestGenerationCountByType>({
+    "tented-name-cards": 0,
+    "name-cards": 0,
+    programs: 0,
+  });
+  const latestGenerationCountByType = latestGenerationCountByTypeProp ?? internalLatestCount;
+  const setLatestGenerationCountByType = onLatestGenerationCountByTypeChange ?? setInternalLatestCount;
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState("");
 
@@ -671,8 +688,16 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
   const resultsRef = useRef<HTMLDivElement>(null);
   const prevDesignCount = useRef(0);
 
-  // Derived views for the currently-active chip
-  const generatedDesigns = designsByType[contentType];
+  // Derived views for the currently-active chip.
+  // generatedDesigns drives the PlaceCard AI results panel — it's the
+  // top slice of the accumulating gallery, sized to the most recent
+  // generation. Resets to length 0 on a fresh component mount so the
+  // AI tab doesn't show stale results from earlier sessions; My Designs
+  // (which reads designsByType directly) is unaffected.
+  const generatedDesigns = designsByType[contentType].slice(
+    0,
+    latestGenerationCountByType[contentType],
+  );
   const selectedDesign = selectedDesignByType[contentType];
   const setSelectedDesign = (updater: number | null | ((prev: number | null) => number | null)) =>
     setSelectedDesignByType(prev => ({
@@ -761,6 +786,15 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
       setDesignsByType(prev => ({
         ...prev,
         [contentType]: [...result.designs, ...prev[contentType]],
+      }));
+      // Mark this generation's size so the PlaceCard AI panel shows
+      // only THESE designs, not the full accumulating gallery. The
+      // count maps to the slice taken at the top of designsByType
+      // since we just prepended, so index 0..n-1 of the slice are
+      // exactly the new designs.
+      setLatestGenerationCountByType(prev => ({
+        ...prev,
+        [contentType]: result.designs.length,
       }));
 
       // Persist server-side so the accumulated set survives navigation,

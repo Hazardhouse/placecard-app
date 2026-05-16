@@ -13,6 +13,7 @@ in-repo) until volume justifies a DB-backed pricing table.
 from __future__ import annotations
 
 import logging
+from typing import List, Optional
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException

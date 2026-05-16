@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
 import { api } from "../api/client";
 
-type Section = "users" | "billing" | "settings";
+type Section = "users" | "billing" | "orders" | "settings";
 type Role = "Admin" | "Editor" | "Viewer";
 
 interface NotificationSettings {
@@ -46,7 +46,11 @@ export default function AccountPage() {
   const { section } = useParams<{ section?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const active: Section = section === "billing" ? "billing" : section === "settings" ? "settings" : "users";
+  const active: Section =
+    section === "billing" ? "billing"
+    : section === "orders" ? "orders"
+    : section === "settings" ? "settings"
+    : "users";
 
   // Capture the route the user came from BEFORE entering Account (set as
   // location.state.from when the dropdown navigates here). The /account
@@ -263,6 +267,12 @@ export default function AccountPage() {
             onClick={() => goToSection("/account/billing")}
           >
             Billing
+          </button>
+          <button
+            className={`account-nav-item ${active === "orders" ? "active" : ""}`}
+            onClick={() => goToSection("/account/orders")}
+          >
+            Orders
           </button>
           <button
             className={`account-nav-item ${active === "settings" ? "active" : ""}`}
@@ -500,6 +510,12 @@ export default function AccountPage() {
                 <p className="account-billing-desc">Visa ending in 4242</p>
                 <button className="btn btn-sm">Update</button>
               </div>
+            </div>
+          )}
+
+          {active === "orders" && (
+            <div className="account-section">
+              <h2>Orders</h2>
               <PrintOrdersSection />
             </div>
           )}
@@ -690,8 +706,6 @@ export default function AccountPage() {
 
 // ── Print Orders section ──────────────────────────────────────────────
 //
-// Lives inside the Billing tab. Lists the current user's print orders
-// newest-first, with cost, status, and a tracking link when available.
 // Status flips happen server-side: pending → paid (Stripe webhook),
 // paid → fulfilled (operator marks tracking via the printing router
 // — automated when the print-vendor API integration lands).
@@ -757,8 +771,7 @@ function PrintOrdersSection() {
 
   if (loading) {
     return (
-      <div className="account-billing-card" style={{ marginTop: 16 }}>
-        <h3>Orders</h3>
+      <div className="account-billing-card">
         <p className="account-billing-desc">Loading…</p>
       </div>
     );
@@ -766,8 +779,7 @@ function PrintOrdersSection() {
 
   if (error) {
     return (
-      <div className="account-billing-card" style={{ marginTop: 16 }}>
-        <h3>Orders</h3>
+      <div className="account-billing-card">
         <p style={{ color: "#dc2626", fontSize: 14, margin: 0 }}>Could not load orders: {error}</p>
       </div>
     );
@@ -775,16 +787,14 @@ function PrintOrdersSection() {
 
   if (orders.length === 0) {
     return (
-      <div className="account-billing-card" style={{ marginTop: 16 }}>
-        <h3>Orders</h3>
+      <div className="account-billing-card">
         <p className="account-billing-desc">You haven't placed any print orders yet. Once you do, they'll show up here with their status and tracking info.</p>
       </div>
     );
   }
 
   return (
-    <div className="account-billing-card" style={{ marginTop: 16 }}>
-      <h3>Orders</h3>
+    <div className="account-billing-card">
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
           <thead>

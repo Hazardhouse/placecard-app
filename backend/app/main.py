@@ -54,6 +54,10 @@ def _start_scheduler():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler = _start_scheduler()
+    # Expose on app.state so request handlers can schedule ad-hoc
+    # jobs (e.g. stripe_webhook scheduling the per-attendee print
+    # rendering after payment_intent.succeeded).
+    app.state.scheduler = scheduler
     yield
     if scheduler:
         scheduler.shutdown(wait=False)

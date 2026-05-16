@@ -648,12 +648,74 @@ def _money_str(amount_cents: int, currency: str) -> str:
     return f"{symbol}{amount_cents / 100:.2f}"
 
 
-def send_print_order_fulfillment(order) -> bool:
+def _render_print_files_section(render_results) -> str:
+    """Build the per-attendee 'Print files' section of the fulfillment
+    email — a list of attendee names with front/back download links.
+
+    Returns "" when no render results are provided (the synchronous
+    fallback path; pre-render-job behaviour). Renders a clear table
+    with successes + failures broken out when results are present.
+    """
+    if not render_results:
+        return ""
+
+    succeeded = [r for r in render_results if r.front_url or r.back_url]
+    failed = [r for r in render_results if r.error and not (r.front_url and r.back_url)]
+
+    def _link_or_dash(url, label):
+        if url:
+            return f'<a href="{url}" style="color:#1b4fff;">{label}</a>'
+        return '<span style="color:#94a3b8;">—</span>'
+
+    cell_style = (
+        "padding:6px 8px;border-bottom:1px solid #f1f5f9;"
+        "font-size:13px;vertical-align:top;"
+    )
+    rows_html: list[str] = []
+    for r in render_results:
+        front_link = _link_or_dash(r.front_url, "Front")
+        back_link = _link_or_dash(r.back_url, "Back")
+        rows_html.append(
+            f'<tr>'
+            f'<td style="{cell_style}">{r.attendee_name}</td>'
+            f'<td style="{cell_style}">{front_link}</td>'
+            f'<td style="{cell_style}">{back_link}</td>'
+            f'</tr>'
+        )
+
+    status_line = (
+        f"<p style='margin:0 0 8px;font-size:13px;color:#64748b;'>"
+        f"{len(succeeded)} of {len(render_results)} attendees rendered"
+        + (f" · {len(failed)} failed" if failed else "")
+        + "</p>"
+    )
+
+    return f"""
+          <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Print files (300 DPI JPG, links expire in 24h)</h2>
+          {status_line}
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">
+            <tr style="background:#f8fafc;">
+              <th style="padding:6px 8px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:600;">Attendee</th>
+              <th style="padding:6px 8px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:600;">Front</th>
+              <th style="padding:6px 8px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:600;">Back</th>
+            </tr>
+            {"".join(rows_html)}
+          </table>
+"""
+
+
+def send_print_order_fulfillment(order, render_results=None) -> bool:
     """Send the operator notification email for a paid print order.
 
     Includes order details inline + the chosen design files + an
     attendees CSV as attachments — everything you need to build the
     print-ready file and hand off to the local printer.
+
+    When `render_results` is provided (list of objects with
+    attendee_name / front_url / back_url / error attributes from the
+    background rendering pipeline), the email also includes signed
+    download URLs for each per-attendee print-ready JPG. URLs expire
+    in 24h; re-trigger the job to refresh.
 
     Returns True on a successful send; False otherwise (logs internally).
     Caller should never let a False here roll back the order's 'paid'
@@ -734,9 +796,11 @@ def send_print_order_fulfillment(order) -> bool:
             <a href="mailto:{order.shipping_email}" style="color:#1b4fff;">{order.shipping_email}</a>
           </p>
 
+          {_render_print_files_section(render_results)}
+
           <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Attachments</h2>
           <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">
-            • Design image(s) — front{' + back' if order.design_views_json else ''}<br>
+            • Source design image(s) — front{' + back' if order.design_views_json else ''} (low-res, for visual reference)<br>
             • Attendee list CSV ({attendee_count} rows)
           </p>
           <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;">

@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.print_order import PrintOrder
-from app.services.email import send_print_order_fulfillment
+from app.services.print_rendering import render_print_files_and_notify
 
 logger = logging.getLogger("stripe_webhook")
 
@@ -64,7 +64,7 @@ async def stripe_webhook(
     obj = event["data"]["object"]
 
     if event_type == "payment_intent.succeeded":
-        _handle_payment_succeeded(obj, db)
+        _handle_payment_succeeded(obj, db, request)
     elif event_type == "payment_intent.payment_failed":
         _handle_payment_failed(obj, db)
     else:
@@ -73,7 +73,7 @@ async def stripe_webhook(
     return {"received": True}
 
 
-def _handle_payment_succeeded(intent: dict, db: Session) -> None:
+def _handle_payment_succeeded(intent: dict, db: Session, request: Request) -> None:
     order = (
         db.query(PrintOrder)
         .filter(PrintOrder.stripe_payment_intent_id == intent["id"])
@@ -94,15 +94,33 @@ def _handle_payment_succeeded(intent: dict, db: Session) -> None:
     order.status = "paid"
     order.paid_at = datetime.utcnow()
     db.commit()
+    order_id = order.id  # capture before the session closes downstream
 
-    # Fire the operator notification. Best-effort — we don't roll back
-    # the 'paid' state if the email fails; the order is paid regardless.
-    try:
-        if send_print_order_fulfillment(order):
-            order.fulfillment_notified_at = datetime.utcnow()
-            db.commit()
-    except Exception:
-        logger.exception("Fulfillment email failed for order %s", order.id)
+    # Schedule the per-attendee Gemini-rendering job on the
+    # APScheduler instance attached to app.state in main.py. The job
+    # takes minutes (N attendees × 2 faces × Gemini latency), which
+    # is well beyond Stripe's webhook timeout — fire-and-forget here,
+    # the webhook returns 200 immediately and Stripe doesn't retry.
+    scheduler = getattr(request.app.state, "scheduler", None)
+    if scheduler is None:
+        # Defensive: if APScheduler isn't running (e.g. import error
+        # at boot), fall back to a thread so the order still gets
+        # rendered + emailed. Slower path but won't block the webhook.
+        import threading
+        logger.warning("Scheduler not on app.state — running render job in a thread")
+        threading.Thread(
+            target=render_print_files_and_notify,
+            args=(order_id,),
+            daemon=True,
+        ).start()
+    else:
+        scheduler.add_job(
+            render_print_files_and_notify,
+            args=(order_id,),
+            id=f"render_order_{order_id}",
+            replace_existing=True,
+        )
+        logger.info("Scheduled print-rendering job for order %s", order_id)
 
 
 def _handle_payment_failed(intent: dict, db: Session) -> None:

@@ -29,6 +29,13 @@ interface Props {
   // using this; the My Designs tab ignores it and shows the whole gallery.
   latestGenerationCountByType?: LatestGenerationCountByType;
   onLatestGenerationCountByTypeChange?: React.Dispatch<React.SetStateAction<LatestGenerationCountByType>>;
+  // Lift the "generation in flight" flag so it survives CollateralTab
+  // unmounting (e.g. when the user switches to Attendees mid-generation).
+  // Without this, the loading state vanishes when the user navigates
+  // away and they can't tell whether their Gemini call is still
+  // running when they come back.
+  generating?: boolean;
+  onGeneratingChange?: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 type DesignCategory = "corporate" | "retreat" | "wedding" | "social";
@@ -618,7 +625,7 @@ const CONTENT_SPECS: Record<ContentType, ContentSpec> = {
 
 const CONTENT_TYPES: ContentType[] = ["tented-name-cards", "programs"];
 
-export default function CollateralTab({ eventId, scheduleItems, arrangements, tables, attendees, eventCategory, eventVenueType, eventName, brandColors, brandFont, designsByType: designsByTypeProp, onDesignsByTypeChange, selectedDesignByType: selectedDesignByTypeProp, onSelectedDesignByTypeChange, latestGenerationCountByType: latestGenerationCountByTypeProp, onLatestGenerationCountByTypeChange }: Props) {
+export default function CollateralTab({ eventId, scheduleItems, arrangements, tables, attendees, eventCategory, eventVenueType, eventName, brandColors, brandFont, designsByType: designsByTypeProp, onDesignsByTypeChange, selectedDesignByType: selectedDesignByTypeProp, onSelectedDesignByTypeChange, latestGenerationCountByType: latestGenerationCountByTypeProp, onLatestGenerationCountByTypeChange, generating: generatingProp, onGeneratingChange }: Props) {
   const [activeView, setActiveView] = useState<string | null>(null);
   const [selectedArrangementId, setSelectedArrangementId] = useState<number>(
     arrangements.length > 0 ? arrangements[0].id : 0
@@ -679,7 +686,9 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
   });
   const latestGenerationCountByType = latestGenerationCountByTypeProp ?? internalLatestCount;
   const setLatestGenerationCountByType = onLatestGenerationCountByTypeChange ?? setInternalLatestCount;
-  const [generating, setGenerating] = useState(false);
+  const [internalGenerating, setInternalGenerating] = useState(false);
+  const generating = generatingProp ?? internalGenerating;
+  const setGenerating = onGeneratingChange ?? setInternalGenerating;
   const [generateError, setGenerateError] = useState("");
 
   // Auto-scroll the results into view when designs first appear after a

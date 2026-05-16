@@ -113,6 +113,11 @@ export default function EventDetail() {
     "name-cards": 0,
     programs: 0,
   });
+  // "Generation in flight" flag, lifted so the loading state survives
+  // CollateralTab unmounting — e.g. when the user switches to Attendees
+  // mid-generation. The Gemini fetch continues regardless; this just
+  // keeps the UI in sync when the user returns.
+  const [generating, setGenerating] = useState(false);
 
   // ── Attendee edit drawer ──
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
@@ -915,6 +920,8 @@ export default function EventDetail() {
           onSelectedDesignByTypeChange={setSelectedDesignByType}
           latestGenerationCountByType={latestGenerationCountByType}
           onLatestGenerationCountByTypeChange={setLatestGenerationCountByType}
+          generating={generating}
+          onGeneratingChange={setGenerating}
         />
       )}
 

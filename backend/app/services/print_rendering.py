@@ -292,45 +292,15 @@ def _build_print_prompt(
         face_size = "4.25 inches wide by 5.5 inches tall portrait"
     elif content_type == "name-cards":
         face_size = "3.5 inches wide by 2 inches tall landscape"
-    else:  # tented-name-cards — folded along the long edge, each face is landscape
+    else:  # tented-name-cards — folded along the long edge, each face landscape
         face_size = "3.5 inches wide by 2 inches tall landscape (one folded face)"
 
-    # The reference image is a product mockup of the customer's chosen
-    # card (a 3D photo of the printed card sitting on a surface).
-    # Earlier attempts to coerce Gemini into "render flat" while
-    # treating the reference as a style source failed — the model
-    # consistently reproduced the mockup composition because the
-    # visual signal of the reference outweighed the prompt.
-    #
-    # Reframing as an EXTRACTION task: the reference contains the
-    # printable artwork inside it, and the model's job is to extract
-    # that artwork out of the photographic scene and reproduce it as
-    # a flat file. This framing aligns better with how the model
-    # weights the reference vs the instruction.
     style_note = (
-        "REFERENCE IMAGE CONTENT: the attached image is a photograph of a "
-        "printed name card sitting on a surface. The card's visible face has "
-        "printed artwork on it (illustration, name text, supporting text, on "
-        "the card's background colour).\n\n"
-        "YOUR TASK: extract the printed artwork from that card face and "
-        "reproduce it as a flat 2D digital file, exactly as the original "
-        "design tool would export it for print. Update only the printed text "
-        "to use the new values listed below; keep everything else (illustration, "
-        "typography style, colour palette, layout, decorative elements) "
-        "matching the reference card's printed face.\n\n"
-        "OUTPUT: a flat, rectangular, edge-to-edge digital artwork file. "
-        "Think Photoshop export, ready for the printer. NOTHING in the frame "
-        "except the artwork itself on its background colour.\n\n"
-        "FORBIDDEN — your output must NEVER contain any of these:\n"
-        "  - the card itself as a physical object (folded, tilted, standing)\n"
-        "  - a surface, table, fabric, wood, marble, or any setting beneath the card\n"
-        "  - shadow, lighting, depth, perspective, reflection, or atmosphere\n"
-        "  - background props: vases, eucalyptus, foliage, room context\n"
-        "  - borders, mats, frames, whitespace, or padding around the artwork\n"
-        "  - the photographic style of the reference\n\n"
-        "If the result would look like a photograph or 3D render of a card, "
-        "you are doing it wrong. Imagine you are exporting the file the "
-        "designer would hand to the printer — that is the output."
+        "Match the typography, color palette, layout, and decorative elements from "
+        "the attached reference image. But render as a flat 2D print artwork, NOT a "
+        "3D product photo: no surface, no lighting, no shadow, no perspective. "
+        "Plain background (white or the design's intended background colour). "
+        "Edge-to-edge artwork sized to the card face."
     )
 
     if face == "front":
@@ -341,24 +311,19 @@ def _build_print_prompt(
             text_block_lines.append(f'Table assignment (small): "{table}"')
         text_block = "\n".join(f"  • {l}" for l in text_block_lines)
         return (
-            f"Extract the printable artwork from the FRONT FACE of the name card "
-            f"shown in the reference image, and reproduce it as a flat 2D digital "
-            f"file at {face_size}.\n\n"
-            f"Replace the printed text with EXACTLY these strings (nothing else):\n"
-            f"{text_block}\n\n"
+            f"Generate a FLAT print-ready artwork of the FRONT of a name card. "
+            f"Card size: {face_size}.\n\n"
+            f"Printed text (use these exact strings, nothing else):\n{text_block}\n\n"
             f"{style_note}"
         )
 
     # back
     back_text = (dietary or "No dietary requirements").strip()
     return (
-        f"Extract the printable artwork from the BACK FACE of the name card "
-        f"shown in the reference image, and reproduce it as a flat 2D digital "
-        f"file at {face_size}.\n\n"
-        f"Replace the printed text with EXACTLY this single centered line:\n"
+        f"Generate a FLAT print-ready artwork of the BACK of a name card. "
+        f"Card size: {face_size}.\n\n"
+        f"Printed text (centered, single line, only this):\n"
         f'  • "{back_text}"\n\n'
-        f"(Backs are typically minimal — single line of text on the card's "
-        f"background colour, no illustration unless the reference's back has one.)\n\n"
         f"{style_note}"
     )
 

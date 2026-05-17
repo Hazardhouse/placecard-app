@@ -872,8 +872,6 @@ type PrintOrderDetail = Awaited<ReturnType<typeof api.getPrintOrder>>;
 function OrderDetailModal({ orderId, onClose }: { orderId: number; onClose: () => void }) {
   const [order, setOrder] = useState<PrintOrderDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [regenerating, setRegenerating] = useState(false);
-  const [regenerateMessage, setRegenerateMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -882,20 +880,6 @@ function OrderDetailModal({ orderId, onClose }: { orderId: number; onClose: () =
       .catch((err: Error) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
   }, [orderId]);
-
-  const handleRegenerate = async () => {
-    if (!order) return;
-    setRegenerating(true);
-    setRegenerateMessage(null);
-    try {
-      await api.regeneratePrintOrder(order.id);
-      setRegenerateMessage("Re-rendering — you'll get an email with the new files in ~30 seconds.");
-    } catch (err) {
-      setRegenerateMessage(err instanceof Error ? `Failed: ${err.message}` : "Failed to start re-render.");
-    } finally {
-      setRegenerating(false);
-    }
-  };
 
   // Close on Escape — modal pattern used elsewhere in this file.
   useEffect(() => {
@@ -946,27 +930,6 @@ function OrderDetailModal({ orderId, onClose }: { orderId: number; onClose: () =
                     <a href={trackHref} target="_blank" rel="noopener noreferrer" style={{ color: "#1b4fff" }}>
                       {order.tracking_carrier ?? "Track"} {order.tracking_number}
                     </a>
-                  </div>
-                )}
-
-                {/* Re-render the print files. Useful when render config
-                    changes (orientation, dimensions, prompt) and the
-                    existing files in storage need to be refreshed. Only
-                    shown for paid orders. */}
-                {(order.status === "paid" || order.status === "fulfilled") && (
-                  <div style={{ marginTop: 12 }}>
-                    <button
-                      className="btn btn-sm"
-                      onClick={handleRegenerate}
-                      disabled={regenerating}
-                    >
-                      {regenerating ? "Starting re-render…" : "Re-render print files"}
-                    </button>
-                    {regenerateMessage && (
-                      <p style={{ marginTop: 8, fontSize: 13, color: regenerateMessage.startsWith("Failed") ? "#dc2626" : "#16a34a" }}>
-                        {regenerateMessage}
-                      </p>
-                    )}
                   </div>
                 )}
               </div>

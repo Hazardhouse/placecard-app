@@ -274,16 +274,6 @@ export const api = {
       currency: string;
     }>("/print/checkout/create-intent", { method: "POST", body: JSON.stringify(data) }),
 
-  // Re-fires the render + email pipeline for a paid order. Owner-only
-  // on the backend. Used when render config changes (e.g. card
-  // orientation) and the existing print files in storage need to be
-  // refreshed without placing a new order.
-  regeneratePrintOrder: (orderId: number) =>
-    request<{ status: string; order_id: number }>(
-      `/print/orders/${orderId}/regenerate`,
-      { method: "POST" },
-    ),
-
   // Used by the success page to confirm the order's status after the
   // PaymentElement reports success — the webhook on the server side
   // is what actually flips status to 'paid', so we poll this briefly.

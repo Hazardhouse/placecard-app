@@ -718,8 +718,15 @@ def _build_view_prompt(
         sample_dietary = (req.sample_guest_dietary or "Vegetarian").strip()
         style = design_brief.rstrip(".")
 
+        # "Standing upright" used to be enough but Gemini now sometimes
+        # interprets it as a portrait composition with tall narrow faces.
+        # Explicitly call out the landscape-face orientation so the visible
+        # face is wider than tall, matching the physical product.
         card_kind = (
-            "folded tent place card standing upright" if content_type == "tented-name-cards"
+            "folded tent place card with LANDSCAPE faces (each face 3.5 inches "
+            "wide by 2 inches tall, folded along the long top edge), standing on a "
+            "neutral surface"
+            if content_type == "tented-name-cards"
             else "flat name card lying flat"
         )
 
@@ -735,16 +742,16 @@ def _build_view_prompt(
 
         if view_label == "Front":
             lines = [
-                f"Product photo, landscape 4:3. A {card_kind} on a neutral surface.",
-                f'The card shows: "{sample_name}" as the focal point, with smaller "{event_name}" '
-                f'and "{sample_table}" nearby.',
+                f"LANDSCAPE 4:3 product photo (wider than tall). A {card_kind}.",
+                f'The visible card face shows: "{sample_name}" as the focal point, with smaller '
+                f'"{event_name}" and "{sample_table}" nearby.',
                 style_sentence,
             ]
         else:  # Back — sent WITH the front image as a reference.
             lines = [
-                "Using the attached image as the reference for paper, lighting, camera angle, and "
-                "surface, generate a matching photo that shows the BACK of the same card in the same "
-                "scene. Landscape 4:3.",
+                "LANDSCAPE 4:3 product photo (wider than tall). Using the attached image as the "
+                "reference for paper, lighting, camera angle, and surface, generate a matching "
+                "photo that shows the BACK of the same card in the same scene.",
                 f'The back face shows only: "{sample_dietary}", centered, as a single line. '
                 f"No other text.",
             ]

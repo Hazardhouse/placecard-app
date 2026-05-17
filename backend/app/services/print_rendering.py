@@ -295,35 +295,42 @@ def _build_print_prompt(
     else:  # tented-name-cards — folded along the long edge, each face is landscape
         face_size = "3.5 inches wide by 2 inches tall landscape (one folded face)"
 
-    # IMPORTANT: the reference image we attach is the customer's
-    # design preview, which is often a styled product mockup (card
-    # sitting on a table, with shadow, plants, etc). Gemini will
-    # otherwise reproduce that scene because the visual signal in
-    # the reference outweighs a casual "render as flat" instruction.
-    # The prompt below leads with very explicit negative constraints
-    # so the model treats the reference as a STYLE source only and
-    # outputs the flat printable artwork.
+    # The reference image is a product mockup of the customer's chosen
+    # card (a 3D photo of the printed card sitting on a surface).
+    # Earlier attempts to coerce Gemini into "render flat" while
+    # treating the reference as a style source failed — the model
+    # consistently reproduced the mockup composition because the
+    # visual signal of the reference outweighed the prompt.
+    #
+    # Reframing as an EXTRACTION task: the reference contains the
+    # printable artwork inside it, and the model's job is to extract
+    # that artwork out of the photographic scene and reproduce it as
+    # a flat file. This framing aligns better with how the model
+    # weights the reference vs the instruction.
     style_note = (
-        "OUTPUT FORMAT — non-negotiable:\n"
-        "You are producing a print-ready digital artwork file. Think Adobe "
-        "Illustrator export, a flat artboard, edge-to-edge artwork.\n\n"
-        "FORBIDDEN OUTPUTS (these will ruin the print run — if you find "
-        "yourself rendering any of these, STOP and recompose):\n"
-        "  - a photograph of the card on any surface (table, fabric, wood, marble)\n"
-        "  - a 3D-rendered card, a folded card, a tilted card, a card at any angle\n"
-        "  - any depth, perspective, shadow, lighting, reflection, or atmosphere\n"
-        "  - any background scene: vases, eucalyptus, foliage, props, room\n"
-        "  - the card's PHYSICAL FORM — never show the card as an object\n"
-        "  - any border, mat, frame, or whitespace around the artwork\n"
-        "  - the photo-mockup style of the reference image (even if the reference is one)\n\n"
-        "REQUIRED: the artwork itself, filling the frame edge to edge, on the "
-        "design's intended background colour, as a flat 2D digital file. "
-        "Like a PDF exported to print. Nothing else in the frame.\n\n"
-        "The reference image is a STYLE SOURCE ONLY. From it, take: typography, "
-        "colour palette, decorative motifs (illustrations, ornaments). IGNORE its "
-        "scene, lighting, surface, perspective, and any product-mockup framing. "
-        "The reference shows you HOW the artwork should look — never what frame "
-        "to put it in."
+        "REFERENCE IMAGE CONTENT: the attached image is a photograph of a "
+        "printed name card sitting on a surface. The card's visible face has "
+        "printed artwork on it (illustration, name text, supporting text, on "
+        "the card's background colour).\n\n"
+        "YOUR TASK: extract the printed artwork from that card face and "
+        "reproduce it as a flat 2D digital file, exactly as the original "
+        "design tool would export it for print. Update only the printed text "
+        "to use the new values listed below; keep everything else (illustration, "
+        "typography style, colour palette, layout, decorative elements) "
+        "matching the reference card's printed face.\n\n"
+        "OUTPUT: a flat, rectangular, edge-to-edge digital artwork file. "
+        "Think Photoshop export, ready for the printer. NOTHING in the frame "
+        "except the artwork itself on its background colour.\n\n"
+        "FORBIDDEN — your output must NEVER contain any of these:\n"
+        "  - the card itself as a physical object (folded, tilted, standing)\n"
+        "  - a surface, table, fabric, wood, marble, or any setting beneath the card\n"
+        "  - shadow, lighting, depth, perspective, reflection, or atmosphere\n"
+        "  - background props: vases, eucalyptus, foliage, room context\n"
+        "  - borders, mats, frames, whitespace, or padding around the artwork\n"
+        "  - the photographic style of the reference\n\n"
+        "If the result would look like a photograph or 3D render of a card, "
+        "you are doing it wrong. Imagine you are exporting the file the "
+        "designer would hand to the printer — that is the output."
     )
 
     if face == "front":
@@ -334,19 +341,24 @@ def _build_print_prompt(
             text_block_lines.append(f'Table assignment (small): "{table}"')
         text_block = "\n".join(f"  • {l}" for l in text_block_lines)
         return (
-            f"Generate a FLAT print-ready artwork of the FRONT of a name card. "
-            f"Card size: {face_size}.\n\n"
-            f"Printed text (use these exact strings, nothing else):\n{text_block}\n\n"
+            f"Extract the printable artwork from the FRONT FACE of the name card "
+            f"shown in the reference image, and reproduce it as a flat 2D digital "
+            f"file at {face_size}.\n\n"
+            f"Replace the printed text with EXACTLY these strings (nothing else):\n"
+            f"{text_block}\n\n"
             f"{style_note}"
         )
 
     # back
     back_text = (dietary or "No dietary requirements").strip()
     return (
-        f"Generate a FLAT print-ready artwork of the BACK of a name card. "
-        f"Card size: {face_size}.\n\n"
-        f"Printed text (centered, single line, only this):\n"
+        f"Extract the printable artwork from the BACK FACE of the name card "
+        f"shown in the reference image, and reproduce it as a flat 2D digital "
+        f"file at {face_size}.\n\n"
+        f"Replace the printed text with EXACTLY this single centered line:\n"
         f'  • "{back_text}"\n\n'
+        f"(Backs are typically minimal — single line of text on the card's "
+        f"background colour, no illustration unless the reference's back has one.)\n\n"
         f"{style_note}"
     )
 

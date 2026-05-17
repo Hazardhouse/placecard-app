@@ -13,6 +13,7 @@
  * attendee CSV attached.
  */
 import { useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { api } from "../api/client";
@@ -67,6 +68,7 @@ export default function PrintCheckoutModal({
   initialRemoveBranding = false,
   onClose,
 }: Props) {
+  const { user: authUser, myProfile } = useAuth();
   const [step, setStep] = useState<Step>("options");
   const [rush, setRush] = useState(initialRush);
   const [removeBranding, setRemoveBranding] = useState(initialRemoveBranding);
@@ -125,8 +127,26 @@ export default function PrintCheckoutModal({
   }, [step, rush, removeBranding, attendees.length, contentType]);
 
   // Shipping fields. UK default per the 2026-05-16 launch decision.
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  // Pre-populate from the logged-in PlaceCard account. Profile display
+  // name wins because the user has explicitly chosen it; falls back to
+  // auth metadata then the email local-part. Email comes from auth
+  // (Supabase verified address). Lazy initialiser so user edits stick.
+  const [name, setName] = useState(() => {
+    if (myProfile?.display_name) return myProfile.display_name;
+    const meta = (authUser?.user_metadata as { full_name?: string } | undefined)?.full_name;
+    if (meta) return meta;
+    if (authUser?.email) return authUser.email.split("@")[0];
+    return "";
+  });
+  const [email, setEmail] = useState(() => authUser?.email ?? "");
+
+  // If myProfile resolves after the modal mounts, fill the empty
+  // defaults — without clobbering anything the user has typed.
+  useEffect(() => {
+    if (!name && myProfile?.display_name) setName(myProfile.display_name);
+    if (!email && authUser?.email) setEmail(authUser.email);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myProfile, authUser]);
   const [company, setCompany] = useState("");
   const [address1, setAddress1] = useState("");
   const [address2, setAddress2] = useState("");

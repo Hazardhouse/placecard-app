@@ -336,6 +336,10 @@ h1, h2, h3, h4, h5, h6 {
   margin-bottom: 8px;
 }
 
+.orders-row-clickable:hover {
+  background: #f8fafc;
+}
+
 .account-billing-plan {
   display: flex;
   align-items: center;

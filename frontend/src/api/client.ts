@@ -270,6 +270,25 @@ export const api = {
       created_at: string;
       paid_at: string | null;
       fulfilled_at: string | null;
+      paper_stock: string;
+      finish: string;
+      color_spec: string;
+      turnaround_days: number;
+      rush: boolean;
+      remove_branding: boolean;
+      base_amount_cents: number;
+      rush_amount_cents: number;
+      remove_branding_amount_cents: number;
+      shipping_amount_cents: number;
+      design_image_b64: string;
+      design_mime_type: string;
+      attendees_count: number;
+      shipping_email: string | null;
+      shipping_company: string | null;
+      shipping_address1: string;
+      shipping_address2: string | null;
+      shipping_state: string | null;
+      shipping_zip: string;
     }>(`/print/orders/${orderId}`),
 
   // Drives the Account → Billing → Orders list.

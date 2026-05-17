@@ -28,6 +28,7 @@ from app import pricing
 from app.schemas.print_order import (
     CreateIntentRequest,
     CreateIntentResponse,
+    PrintOrderDetailResponse,
     PrintOrderResponse,
     QuoteRequest,
     QuoteResponse,
@@ -294,17 +295,67 @@ def list_orders(
     return [_order_to_response(o, db) for o in orders]
 
 
-@router.get("/orders/{order_id}", response_model=PrintOrderResponse)
+def _order_to_detail(order: PrintOrder, db: Session) -> PrintOrderDetailResponse:
+    event_name: Optional[str] = None
+    if order.event_id:
+        event = db.query(Event).filter(Event.id == order.event_id).first()
+        if event:
+            event_name = event.name
+    attendees = order.attendees_json or []
+    return PrintOrderDetailResponse(
+        id=order.id,
+        status=order.status,
+        total_amount_cents=order.total_amount_cents,
+        currency=order.currency,
+        content_type=order.content_type,
+        quantity=order.quantity,
+        quantity_tier=order.quantity_tier,
+        event_id=order.event_id,
+        event_name=event_name,
+        shipping_name=order.shipping_name,
+        shipping_city=order.shipping_city,
+        shipping_country=order.shipping_country,
+        tracking_number=order.tracking_number,
+        tracking_carrier=order.tracking_carrier,
+        tracking_url=order.tracking_url,
+        created_at=order.created_at.isoformat(),
+        paid_at=order.paid_at.isoformat() if order.paid_at else None,
+        fulfilled_at=order.fulfilled_at.isoformat() if order.fulfilled_at else None,
+        paper_stock=order.paper_stock,
+        finish=order.finish,
+        color_spec=order.color_spec,
+        turnaround_days=order.turnaround_days,
+        rush=order.rush,
+        remove_branding=order.remove_branding,
+        base_amount_cents=order.base_amount_cents,
+        rush_amount_cents=order.rush_amount_cents,
+        remove_branding_amount_cents=order.remove_branding_amount_cents,
+        shipping_amount_cents=order.shipping_amount_cents,
+        design_image_b64=order.design_image_b64,
+        design_mime_type=order.design_mime_type,
+        attendees_count=len(attendees),
+        shipping_email=order.shipping_email,
+        shipping_company=order.shipping_company,
+        shipping_address1=order.shipping_address1,
+        shipping_address2=order.shipping_address2,
+        shipping_state=order.shipping_state,
+        shipping_zip=order.shipping_zip,
+    )
+
+
+@router.get("/orders/{order_id}", response_model=PrintOrderDetailResponse)
 def get_order(
     order_id: int,
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Used by the success page to confirm the order's status."""
+    """Order detail with full breakdown + design preview. Drives the
+    order popup in Account → Orders and the post-checkout success page.
+    """
     q = db.query(PrintOrder).filter(PrintOrder.id == order_id)
     if not user.is_anonymous:
         q = q.filter(PrintOrder.user_id == user.id)
     order = q.first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    return _order_to_response(order, db)
+    return _order_to_detail(order, db)

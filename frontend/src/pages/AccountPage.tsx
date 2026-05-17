@@ -761,6 +761,7 @@ function PrintOrdersSection() {
   const [orders, setOrders] = useState<PrintOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
 
   useEffect(() => {
     api.listPrintOrders()
@@ -812,7 +813,12 @@ function PrintOrdersSection() {
               const status = orderStatusLabel(o.status);
               const trackHref = trackingHref(o);
               return (
-                <tr key={o.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                <tr
+                  key={o.id}
+                  onClick={() => setSelectedOrderId(o.id)}
+                  style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
+                  className="orders-row-clickable"
+                >
                   <td style={{ padding: "10px 6px" }}>#{o.id}</td>
                   <td style={{ padding: "10px 6px", color: "#475569" }}>{o.event_name ?? "—"}</td>
                   <td style={{ padding: "10px 6px", color: "#475569" }}>{new Date(o.created_at).toLocaleDateString()}</td>
@@ -820,7 +826,7 @@ function PrintOrdersSection() {
                   <td style={{ padding: "10px 6px" }}>
                     <span style={{ color: status.color, fontWeight: 500 }}>{status.label}</span>
                   </td>
-                  <td style={{ padding: "10px 6px" }}>
+                  <td style={{ padding: "10px 6px" }} onClick={e => e.stopPropagation()}>
                     {trackHref ? (
                       <a href={trackHref} target="_blank" rel="noopener noreferrer" style={{ color: "#1b4fff" }}>
                         {o.tracking_carrier ?? "Track"} {o.tracking_number}
@@ -835,6 +841,189 @@ function PrintOrdersSection() {
           </tbody>
         </table>
       </div>
+      {selectedOrderId !== null && (
+        <OrderDetailModal orderId={selectedOrderId} onClose={() => setSelectedOrderId(null)} />
+      )}
     </div>
+  );
+}
+
+
+// ── Order detail modal ────────────────────────────────────────────────
+
+type PrintOrderDetail = Awaited<ReturnType<typeof api.getPrintOrder>>;
+
+function OrderDetailModal({ orderId, onClose }: { orderId: number; onClose: () => void }) {
+  const [order, setOrder] = useState<PrintOrderDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getPrintOrder(orderId)
+      .then(o => { if (!cancelled) setOrder(o); })
+      .catch((err: Error) => { if (!cancelled) setError(err.message); });
+    return () => { cancelled = true; };
+  }, [orderId]);
+
+  // Close on Escape — modal pattern used elsewhere in this file.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const status = order ? orderStatusLabel(order.status) : null;
+  const trackHref = order ? trackingHref({
+    tracking_number: order.tracking_number,
+    tracking_carrier: order.tracking_carrier,
+    tracking_url: order.tracking_url,
+  } as PrintOrderRow) : null;
+
+  return (
+    <>
+      <div className="invite-overlay" onClick={onClose} />
+      <div className="invite-modal" style={{ maxWidth: 720, width: "94vw" }}>
+        <div className="invite-modal-header">
+          <h3>{order ? `Order #${order.id}` : "Order"}</h3>
+          <button className="invite-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="invite-modal-body" style={{ maxHeight: "70vh", overflowY: "auto" }}>
+          {!order && !error && <p className="account-billing-desc">Loading order…</p>}
+          {error && <p style={{ color: "#dc2626", fontSize: 14 }}>Could not load order: {error}</p>}
+          {order && status && (
+            <>
+              {/* Status row */}
+              <div style={{ marginBottom: 16 }}>
+                <span style={{ color: status.color, fontWeight: 600 }}>{status.label}</span>
+                <span style={{ color: "#64748b", marginLeft: 12, fontSize: 13 }}>
+                  Placed {new Date(order.created_at).toLocaleString()}
+                </span>
+                {order.paid_at && (
+                  <div style={{ color: "#64748b", fontSize: 13, marginTop: 2 }}>
+                    Paid {new Date(order.paid_at).toLocaleString()}
+                  </div>
+                )}
+                {order.fulfilled_at && (
+                  <div style={{ color: "#64748b", fontSize: 13, marginTop: 2 }}>
+                    Shipped {new Date(order.fulfilled_at).toLocaleString()}
+                  </div>
+                )}
+                {trackHref && (
+                  <div style={{ marginTop: 6, fontSize: 13 }}>
+                    Tracking:{" "}
+                    <a href={trackHref} target="_blank" rel="noopener noreferrer" style={{ color: "#1b4fff" }}>
+                      {order.tracking_carrier ?? "Track"} {order.tracking_number}
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              {/* Two-column: design preview + summary */}
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.3fr)", gap: 20, marginBottom: 20 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                    Design
+                  </div>
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 8, background: "#f8fafc" }}>
+                    <img
+                      src={`data:${order.design_mime_type};base64,${order.design_image_b64}`}
+                      alt="Card design"
+                      style={{ width: "100%", height: "auto", borderRadius: 4, display: "block" }}
+                    />
+                  </div>
+                  {order.event_name && (
+                    <div style={{ marginTop: 8, fontSize: 13, color: "#475569" }}>
+                      <strong>Event:</strong> {order.event_name}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                    Specs
+                  </div>
+                  <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
+                    <tbody>
+                      <SpecRow label="Type" value={order.content_type.replace(/-/g, " ")} />
+                      <SpecRow label="Quantity" value={`${order.quantity_tier} cards (${order.attendees_count} attendees)`} />
+                      <SpecRow label="Paper" value={order.paper_stock} />
+                      <SpecRow label="Finish" value={order.finish} />
+                      <SpecRow label="Colour" value={order.color_spec === "4/4" ? "Full colour, both sides" : order.color_spec} />
+                      <SpecRow label="Turnaround" value={`${order.turnaround_days} day${order.turnaround_days === 1 ? "" : "s"}`} />
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Price breakdown */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                  Price breakdown
+                </div>
+                <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
+                  <tbody>
+                    <PriceRow label={`Cards (×${order.quantity_tier})`} cents={order.base_amount_cents} currency={order.currency} />
+                    {order.rush && (
+                      <PriceRow label="Rush turnaround" cents={order.rush_amount_cents} currency={order.currency} />
+                    )}
+                    {order.remove_branding && (
+                      <PriceRow label="Remove PlaceCard branding" cents={order.remove_branding_amount_cents} currency={order.currency} />
+                    )}
+                    <PriceRow label="Shipping" cents={order.shipping_amount_cents} currency={order.currency} />
+                    <tr style={{ borderTop: "1px solid #e2e8f0" }}>
+                      <td style={{ padding: "10px 6px", fontWeight: 600 }}>Total</td>
+                      <td style={{ padding: "10px 6px", textAlign: "right", fontWeight: 600 }}>
+                        {formatOrderMoney(order.total_amount_cents, order.currency)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Shipping address */}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                  Shipping to
+                </div>
+                <div style={{ fontSize: 14, color: "#1e293b", lineHeight: 1.5 }}>
+                  <div>{order.shipping_name}</div>
+                  {order.shipping_company && <div>{order.shipping_company}</div>}
+                  <div>{order.shipping_address1}</div>
+                  {order.shipping_address2 && <div>{order.shipping_address2}</div>}
+                  <div>
+                    {order.shipping_city}
+                    {order.shipping_state ? `, ${order.shipping_state}` : ""}
+                    {" "}{order.shipping_zip}
+                  </div>
+                  <div>{order.shipping_country}</div>
+                  {order.shipping_email && (
+                    <div style={{ color: "#64748b", marginTop: 4 }}>{order.shipping_email}</div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SpecRow({ label, value }: { label: string; value: string }) {
+  return (
+    <tr>
+      <td style={{ padding: "4px 0", color: "#64748b", width: "40%" }}>{label}</td>
+      <td style={{ padding: "4px 0", color: "#1e293b", textTransform: "capitalize" }}>{value}</td>
+    </tr>
+  );
+}
+
+function PriceRow({ label, cents, currency }: { label: string; cents: number; currency: string }) {
+  return (
+    <tr>
+      <td style={{ padding: "6px 6px", color: "#475569" }}>{label}</td>
+      <td style={{ padding: "6px 6px", textAlign: "right", color: "#1e293b" }}>
+        {formatOrderMoney(cents, currency)}
+      </td>
+    </tr>
   );
 }

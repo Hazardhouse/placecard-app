@@ -90,9 +90,13 @@ class CreateIntentResponse(BaseModel):
     currency: str  # lowercase ISO ('usd' or 'gbp') — Stripe convention
 
 
-# ── Order status (for the success page) ────────────────────────────────
+# ── Order status (for the success page + list view) ────────────────────
 
 class PrintOrderResponse(BaseModel):
+    """Slim row-shaped payload for /print/orders. Doesn't carry the design
+    base64 or the full address — those live on PrintOrderDetailResponse
+    behind /print/orders/{id}.
+    """
     id: int
     status: str  # 'pending' | 'paid' | 'failed' | 'fulfilled'
     total_amount_cents: int
@@ -111,3 +115,44 @@ class PrintOrderResponse(BaseModel):
     created_at: str
     paid_at: Optional[str] = None
     fulfilled_at: Optional[str] = None
+
+
+# ── Order detail (for the order popup) ─────────────────────────────────
+
+class PrintOrderDetailResponse(PrintOrderResponse):
+    """Full order payload with price breakdown, addons, design preview,
+    attendees count, and full shipping address. Used by the order detail
+    modal — not the list view, because we don't want to ship the base64
+    design with every row.
+    """
+    # Print specs
+    paper_stock: str
+    finish: str
+    color_spec: str
+    turnaround_days: int
+    rush: bool
+    remove_branding: bool
+
+    # Price breakdown (already-charged amounts, integers in minor units)
+    base_amount_cents: int
+    rush_amount_cents: int
+    remove_branding_amount_cents: int
+    shipping_amount_cents: int
+
+    # Design snapshot — front face only for preview. The full views array
+    # would balloon the response; the modal just needs one image.
+    design_image_b64: str
+    design_mime_type: str
+
+    # Attendee count (the printed quantity is order.quantity; this is the
+    # count of attendee rows captured at order time — sometimes lower
+    # since users round up to the next print tier).
+    attendees_count: int
+
+    # Full shipping address
+    shipping_email: Optional[str] = None
+    shipping_company: Optional[str] = None
+    shipping_address1: str
+    shipping_address2: Optional[str] = None
+    shipping_state: Optional[str] = None
+    shipping_zip: str

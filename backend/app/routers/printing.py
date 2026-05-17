@@ -249,6 +249,11 @@ def create_intent(
         order_id=order.id,
         total_amount_cents=total_cents,
         currency=currency_iso.lower(),
+        base_amount_cents=base_cents,
+        rush_amount_cents=rush_cents,
+        remove_branding_amount_cents=branding_cents,
+        shipping_amount_cents=shipping_cents,
+        quantity_tier=breakdown["quantity_tier"],
     )
 
 

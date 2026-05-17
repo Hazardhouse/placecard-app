@@ -74,6 +74,16 @@ export default function PrintCheckoutModal({
   const [orderId, setOrderId] = useState<number | null>(null);
   const [totalCents, setTotalCents] = useState(0);
   const [currency, setCurrency] = useState("gbp");
+  // Server-authoritative breakdown returned alongside the PaymentIntent.
+  // Drives the line-item summary on the Payment step so the customer
+  // can see what makes up the total (shipping, addons).
+  const [breakdown, setBreakdown] = useState<{
+    base_amount_cents: number;
+    rush_amount_cents: number;
+    remove_branding_amount_cents: number;
+    shipping_amount_cents: number;
+    quantity_tier: number;
+  } | null>(null);
 
   // Preview quote for the options step. Refetched whenever the addon
   // ticks change — the server is the authoritative pricer. Country
@@ -160,6 +170,13 @@ export default function PrintCheckoutModal({
       setOrderId(result.order_id);
       setTotalCents(result.total_amount_cents);
       setCurrency(result.currency);
+      setBreakdown({
+        base_amount_cents: result.base_amount_cents,
+        rush_amount_cents: result.rush_amount_cents,
+        remove_branding_amount_cents: result.remove_branding_amount_cents,
+        shipping_amount_cents: result.shipping_amount_cents,
+        quantity_tier: result.quantity_tier,
+      });
       setStep("payment");
     } catch (err: any) {
       setError(err?.message ?? "Could not start checkout");
@@ -355,6 +372,9 @@ export default function PrintCheckoutModal({
               <PaymentStep
                 totalCents={totalCents}
                 currency={currency}
+                breakdown={breakdown}
+                rush={rush}
+                removeBranding={removeBranding}
                 onSuccess={() => setStep("success")}
                 onError={(msg) => setError(msg)}
               />
@@ -432,11 +452,23 @@ export default function PrintCheckoutModal({
 function PaymentStep({
   totalCents,
   currency,
+  breakdown,
+  rush,
+  removeBranding,
   onSuccess,
   onError,
 }: {
   totalCents: number;
   currency: string;
+  breakdown: {
+    base_amount_cents: number;
+    rush_amount_cents: number;
+    remove_branding_amount_cents: number;
+    shipping_amount_cents: number;
+    quantity_tier: number;
+  } | null;
+  rush: boolean;
+  removeBranding: boolean;
   onSuccess: () => void;
   onError: (msg: string) => void;
 }) {
@@ -488,18 +520,39 @@ function PaymentStep({
   };
 
   const symbol = currency.toLowerCase() === "gbp" ? "£" : "$";
-  const amount = (totalCents / 100).toFixed(2);
+  const fmt = (cents: number) => `${symbol}${(cents / 100).toFixed(2)}`;
 
   return (
     <>
       <div className="order-price-area">
         <div className="order-price-display">
+          {breakdown && (
+            <>
+              <div className="order-price-row">
+                <span>Cards (×{breakdown.quantity_tier})</span>
+                <span>{fmt(breakdown.base_amount_cents)}</span>
+              </div>
+              {rush && breakdown.rush_amount_cents > 0 && (
+                <div className="order-price-row">
+                  <span>Rush turnaround</span>
+                  <span>{fmt(breakdown.rush_amount_cents)}</span>
+                </div>
+              )}
+              {removeBranding && breakdown.remove_branding_amount_cents > 0 && (
+                <div className="order-price-row">
+                  <span>Remove PlaceCard branding</span>
+                  <span>{fmt(breakdown.remove_branding_amount_cents)}</span>
+                </div>
+              )}
+              <div className="order-price-row">
+                <span>Shipping</span>
+                <span>{fmt(breakdown.shipping_amount_cents)}</span>
+              </div>
+            </>
+          )}
           <div className="order-price-row order-price-total">
             <span>Total</span>
-            <strong>
-              {symbol}
-              {amount}
-            </strong>
+            <strong>{fmt(totalCents)}</strong>
           </div>
         </div>
       </div>
@@ -514,7 +567,7 @@ function PaymentStep({
           disabled={!stripe || !elements || submitting}
           style={{ minWidth: 180 }}
         >
-          {submitting ? "Processing…" : `Pay ${symbol}${amount}`}
+          {submitting ? "Processing…" : `Pay ${fmt(totalCents)}`}
         </button>
       </div>
     </>

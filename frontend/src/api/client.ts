@@ -272,6 +272,11 @@ export const api = {
       order_id: number;
       total_amount_cents: number;
       currency: string;
+      base_amount_cents: number;
+      rush_amount_cents: number;
+      remove_branding_amount_cents: number;
+      shipping_amount_cents: number;
+      quantity_tier: number;
     }>("/print/checkout/create-intent", { method: "POST", body: JSON.stringify(data) }),
 
   // Used by the success page to confirm the order's status after the

@@ -88,6 +88,15 @@ class CreateIntentResponse(BaseModel):
     order_id: int
     total_amount_cents: int
     currency: str  # lowercase ISO ('usd' or 'gbp') — Stripe convention
+    # Price-breakdown line items so the payment step can show
+    # shipping + addons alongside the total. Without these the
+    # customer sees only the summed total and can't tell what's
+    # included.
+    base_amount_cents: int
+    rush_amount_cents: int
+    remove_branding_amount_cents: int
+    shipping_amount_cents: int
+    quantity_tier: int
 
 
 # ── Order status (for the success page + list view) ────────────────────

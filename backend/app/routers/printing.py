@@ -343,6 +343,53 @@ def _order_to_detail(order: PrintOrder, db: Session) -> PrintOrderDetailResponse
     )
 
 
+@router.post("/orders/{order_id}/regenerate")
+def regenerate_order_files(
+    order_id: int,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Re-run the render + email pipeline for an existing paid order.
+
+    Used when render config changes (orientation, dimensions, prompt) and
+    we need to refresh the print files in Supabase Storage without
+    placing a new order. Owner-only. Reuses the same scheduler path the
+    Stripe webhook fires.
+    """
+    q = db.query(PrintOrder).filter(PrintOrder.id == order_id)
+    if not user.is_anonymous:
+        q = q.filter(PrintOrder.user_id == user.id)
+    order = q.first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != "paid":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Order status is {order.status!r}; only 'paid' orders can be re-rendered.",
+        )
+
+    # Same fire-and-forget pattern stripe_webhook uses.
+    from app.services.print_rendering import render_print_files_and_notify
+    scheduler = getattr(request.app.state, "scheduler", None)
+    if scheduler is None:
+        import threading
+        threading.Thread(
+            target=render_print_files_and_notify,
+            args=(order.id,),
+            daemon=True,
+        ).start()
+    else:
+        scheduler.add_job(
+            render_print_files_and_notify,
+            args=(order.id,),
+            id=f"render_order_{order.id}_regen",
+            replace_existing=True,
+        )
+    logger.info("Re-render scheduled for order %s by %s", order.id, user.id)
+    return {"status": "scheduled", "order_id": order.id}
+
+
 @router.get("/orders/{order_id}", response_model=PrintOrderDetailResponse)
 def get_order(
     order_id: int,

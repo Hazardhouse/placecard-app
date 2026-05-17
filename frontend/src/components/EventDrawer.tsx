@@ -44,6 +44,44 @@ function toTimeInputValue(iso: string | null): string {
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
+// 15-min slots from "00:00" to "23:45" inclusive.
+const TIME_SLOTS_15MIN: string[] = (() => {
+  const slots: string[] = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+  }
+  return slots;
+})();
+
+// Browser-timezone proxy for "is this a UK user". True IP geolocation
+// would need a backend round-trip or a paid GeoIP provider; timezone
+// catches every UK user with a correctly-set clock, and is what they'd
+// actually want regardless of where the request originates from.
+function isUKUserByTimezone(): boolean {
+  try {
+    if (Intl.DateTimeFormat().resolvedOptions().timeZone === "Europe/London") return true;
+  } catch {
+    // Intl can throw in very old browsers — fall through to locale check.
+  }
+  if (typeof navigator !== "undefined" && navigator.language?.startsWith("en-GB")) return true;
+  return false;
+}
+
+// Render "HH:MM" as either 24-hour or "h:MM AM/PM" depending on locale.
+function formatTimeLabel(value: string, military: boolean): string {
+  if (!value) return "";
+  const [hStr, mStr] = value.split(":");
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return value;
+  if (military) return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
 // Combine a YYYY-MM-DD date with an optional HH:MM time into an
 // ISO timestamp. Empty time falls back to the existing date-only
 // behavior (UTC midnight) — keeps backward compatibility for events
@@ -96,6 +134,10 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // UK users see 24-hour ("military") time, everyone else 12-hour with AM/PM.
+  // Detected once per mount via the browser's resolved timezone.
+  const [military] = useState<boolean>(() => isUKUserByTimezone());
 
   // Location autocomplete (Google Places via /api/places/autocomplete)
   const [locationSuggestions, setLocationSuggestions] = useState<Prediction[]>([]);
@@ -380,24 +422,55 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
           {/* Start / End time — one-day events only. Multi-day events fall
               back to date-only until we ship full date+time pickers for
               both ends. Empty time => date-only save (UTC midnight), so
-              the organizer can choose to skip times entirely. */}
+              the organizer can choose to skip times entirely.
+
+              Selects (not native time inputs) so we can constrain end >
+              start, snap to 15-min increments, and switch display format
+              by locale. Underlying value stays HH:MM 24-hour for the
+              save layer. */}
           {oneDay && (
             <div className="form-row event-drawer-time-row">
               <div className="form-group">
                 <label>Start Time</label>
-                <input
-                  type="time"
+                <select
                   value={startTime}
-                  onChange={e => setStartTime(e.target.value)}
-                />
+                  onChange={e => {
+                    const next = e.target.value;
+                    setStartTime(next);
+                    // If end is now ≤ start, clear it so the user re-picks
+                    // from the (now-valid) trimmed options.
+                    if (next && endTime && endTime <= next) setEndTime("");
+                  }}
+                >
+                  <option value="">Select…</option>
+                  {/* If the loaded event has a time that's not on the 15-min
+                      grid (legacy data), surface it as a one-off option so
+                      we don't silently drop it on save. */}
+                  {startTime && !TIME_SLOTS_15MIN.includes(startTime) && (
+                    <option value={startTime}>{formatTimeLabel(startTime, military)}</option>
+                  )}
+                  {TIME_SLOTS_15MIN.map(slot => (
+                    <option key={slot} value={slot}>{formatTimeLabel(slot, military)}</option>
+                  ))}
+                </select>
               </div>
               <div className="form-group">
                 <label>End Time</label>
-                <input
-                  type="time"
+                <select
                   value={endTime}
                   onChange={e => setEndTime(e.target.value)}
-                />
+                  disabled={!startTime}
+                >
+                  <option value="">{startTime ? "Select…" : "Pick start time first"}</option>
+                  {endTime && !TIME_SLOTS_15MIN.includes(endTime) && endTime > startTime && (
+                    <option value={endTime}>{formatTimeLabel(endTime, military)}</option>
+                  )}
+                  {TIME_SLOTS_15MIN
+                    .filter(slot => !startTime || slot > startTime)
+                    .map(slot => (
+                      <option key={slot} value={slot}>{formatTimeLabel(slot, military)}</option>
+                    ))}
+                </select>
               </div>
             </div>
           )}

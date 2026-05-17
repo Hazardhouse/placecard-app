@@ -1,0 +1,35 @@
+{
+  "categories": {
+    "system_routes": [
+      "account", "login", "signup", "signin", "signout", "logout", "register",
+      "api", "e", "events", "event", "playground", "about", "pricing", "terms",
+      "privacy", "blog", "help", "admin", "settings", "dashboard", "home",
+      "discover", "explore", "feed", "search", "share"
+    ],
+    "product_nouns": [
+      "host", "hosts", "salon", "salons", "profile", "profiles", "brand",
+      "billing", "orders", "rsvp", "invite", "invites", "attendees", "guest",
+      "guests", "members", "membership", "directory"
+    ],
+    "internet_reserved": [
+      "www", "mail", "email", "support", "contact", "staff", "team", "info",
+      "news", "legal", "dmca", "copyright", "tos", "official", "press",
+      "careers", "jobs", "hiring"
+    ],
+    "infra": [
+      "dev", "staging", "test", "qa", "webhook", "webhooks", "oauth", "auth",
+      "callback", "health", "status", "robots", "sitemap", "assets", "static",
+      "public", "private", "cdn", "media", "img", "image", "images", "css",
+      "js", "favicon"
+    ],
+    "brand_protection": [
+      "placecard", "placecardapp", "placecardevents", "placecard-events",
+      "placecard_official", "hazardhouse", "hazardhouseco"
+    ],
+    "squat_targets": [
+      "anonymous", "system", "root", "user", "users", "me", "you", "we",
+      "everyone", "anyone", "null", "undefined", "true", "false"
+    ]
+  },
+  "_note": "Slur / hate-term checks happen in code via the better_profanity library, not enumerated here."
+}

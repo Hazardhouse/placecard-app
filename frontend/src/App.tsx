@@ -8,6 +8,7 @@ import LoginPage from "./pages/LoginPage";
 import PublicForm from "./pages/PublicForm";
 import RestaurantView from "./pages/RestaurantView";
 import PublicEvent from "./pages/PublicEvent";
+import ProfilePage from "./pages/ProfilePage";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import logoSvg from "./assets/placecard-logo.svg";
 import "./App.css";
@@ -102,6 +103,17 @@ function ProtectedLayout() {
   );
 }
 
+function RootDispatcher() {
+  const location = useLocation();
+  // `@`-prefixed root paths render the public host profile. Otherwise
+  // we fall through to the authenticated app. This sidesteps RR7's
+  // inability to match a `:param` directly after a literal `@`.
+  if (location.pathname.startsWith("/@") && location.pathname.length > 2) {
+    return <ProfilePage />;
+  }
+  return <ProtectedLayout />;
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -110,7 +122,14 @@ function App() {
           <Route path="/forms/:shareToken" element={<PublicForm />} />
           <Route path="/restaurant/:variant/:shareToken" element={<RestaurantView />} />
           <Route path="/event/:token" element={<PublicEvent />} />
-          <Route path="/*" element={<ProtectedLayout />} />
+          {/* Catch-all dispatcher. React Router 7's path-to-regexp only
+              recognises `:param` after a slash and `*` as a standalone
+              or trailing-slash segment, so `/@:handle` and `/@*` both
+              fail to match `/@dani`. RootDispatcher reads useLocation
+              at runtime and routes the `@`-prefixed paths to the public
+              ProfilePage, everything else into the authenticated layout.
+              Keeps the `placecard-events.app/@dani` marketing URL. */}
+          <Route path="/*" element={<RootDispatcher />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

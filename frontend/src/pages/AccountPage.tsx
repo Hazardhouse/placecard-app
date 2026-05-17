@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
-import { api } from "../api/client";
+import { api, type ProfileShape } from "../api/client";
+import { fileToCompressedDataUrl } from "../utils/image";
 
-type Section = "users" | "billing" | "orders" | "settings";
+type Section = "users" | "profile" | "billing" | "orders" | "settings";
 type Role = "Admin" | "Editor" | "Viewer";
 
 interface NotificationSettings {
@@ -47,7 +48,8 @@ export default function AccountPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const active: Section =
-    section === "billing" ? "billing"
+    section === "profile" ? "profile"
+    : section === "billing" ? "billing"
     : section === "orders" ? "orders"
     : section === "settings" ? "settings"
     : "users";
@@ -261,6 +263,12 @@ export default function AccountPage() {
             onClick={() => goToSection("/account")}
           >
             Users
+          </button>
+          <button
+            className={`account-nav-item ${active === "profile" ? "active" : ""}`}
+            onClick={() => goToSection("/account/profile")}
+          >
+            Profile
           </button>
           <button
             className={`account-nav-item ${active === "billing" ? "active" : ""}`}
@@ -491,6 +499,13 @@ export default function AccountPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {active === "profile" && (
+            <div className="account-section">
+              <h2>Profile</h2>
+              <ProfileEditorSection />
             </div>
           )}
 
@@ -1025,5 +1040,322 @@ function PriceRow({ label, cents, currency }: { label: string; cents: number; cu
         {formatOrderMoney(cents, currency)}
       </td>
     </tr>
+  );
+}
+
+
+// ── Profile editor ────────────────────────────────────────────────────
+//
+// Lets the host edit their public profile: display name, @handle, photo,
+// bio, city, and visibility. Handle changes are validated live against
+// /api/profiles/handle/available so the user gets feedback before save.
+// Photo upload runs through the same compression pipeline as event hero
+// images, then POSTs the base64 to /api/profiles/me/photo for Supabase
+// Storage upload.
+
+function ProfileEditorSection() {
+  const { user: authUser, refreshMyProfile } = useAuth();
+  const [profile, setProfile] = useState<ProfileShape | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Local form state (kept separate from `profile` so unsaved edits
+  // don't clobber the server snapshot until save succeeds).
+  const [displayName, setDisplayName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [bio, setBio] = useState("");
+  const [city, setCity] = useState("");
+  const [visibility, setVisibility] = useState<"public" | "unlisted" | "private">("public");
+
+  const [handleStatus, setHandleStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [handleReason, setHandleReason] = useState<string | null>(null);
+  const handleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Initial load — also provisions the profile server-side on first call.
+  // displayNameHint comes from Supabase user_metadata so the auto-handle
+  // isn't derived from the email local-part when a real name is available.
+  useEffect(() => {
+    const hint = authUser?.user_metadata?.full_name as string | undefined;
+    api.getMyProfile(hint)
+      .then(p => {
+        setProfile(p);
+        setDisplayName(p.display_name);
+        setHandle(p.handle);
+        setBio(p.bio ?? "");
+        setCity(p.city ?? "");
+        setVisibility(p.visibility);
+      })
+      .catch((err: Error) => setLoadError(err.message));
+  }, [authUser]);
+
+  // Live handle-availability check. Debounced so we don't pummel the
+  // backend on every keystroke.
+  useEffect(() => {
+    if (handleTimer.current) clearTimeout(handleTimer.current);
+    if (!profile) return;
+    if (handle === profile.handle) {
+      setHandleStatus("idle");
+      setHandleReason(null);
+      return;
+    }
+    if (handle.length < 3) {
+      setHandleStatus("idle");
+      setHandleReason(null);
+      return;
+    }
+    setHandleStatus("checking");
+    handleTimer.current = setTimeout(async () => {
+      try {
+        const r = await api.checkHandleAvailable(handle);
+        if (r.available) {
+          setHandleStatus("available");
+          setHandleReason(null);
+        } else {
+          setHandleStatus("taken");
+          setHandleReason(r.reason);
+        }
+      } catch {
+        setHandleStatus("idle");
+      }
+    }, 300);
+    return () => {
+      if (handleTimer.current) clearTimeout(handleTimer.current);
+    };
+  }, [handle, profile]);
+
+  const handlePhotoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoBusy(true);
+    setSaveError(null);
+    try {
+      // 400×400 is plenty for a circular avatar; compressing keeps the
+      // upload + display fast and stays under the backend's 5 MB cap.
+      const dataUrl = await fileToCompressedDataUrl(file, 400, 400, 0.85);
+      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) throw new Error("Could not read image data.");
+      const [, mime, b64] = match;
+      const res = await api.uploadProfilePhoto(b64, mime);
+      setProfile(p => (p ? { ...p, photo_url: res.photo_url } : p));
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Photo upload failed.");
+    } finally {
+      setPhotoBusy(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
+  const handleSave = async () => {
+    if (!profile) return;
+    if (handleStatus === "taken") {
+      setSaveError(handleReason ?? "Pick a different handle.");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    setSaved(false);
+    try {
+      const updated = await api.updateMyProfile({
+        display_name: displayName,
+        handle: handle === profile.handle ? undefined : handle,
+        bio: bio || null,
+        city: city || null,
+        visibility,
+      });
+      setProfile(updated);
+      setHandle(updated.handle);
+      setHandleStatus("idle");
+      setSaved(true);
+      // Push the change up to AuthContext so the header dropdown +
+      // "Hosted by" attributions across the app refresh immediately.
+      void refreshMyProfile();
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loadError) {
+    return (
+      <div className="account-billing-card">
+        <p style={{ color: "#dc2626", fontSize: 14 }}>Could not load profile: {loadError}</p>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="account-billing-card">
+        <p className="account-billing-desc">Loading…</p>
+      </div>
+    );
+  }
+
+  const initials = displayName
+    .split(" ")
+    .map(p => p[0])
+    .filter(Boolean)
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  return (
+    <div className="account-billing-card" style={{ maxWidth: 640 }}>
+      {/* Photo + name row */}
+      <div style={{ display: "flex", gap: 20, alignItems: "center", marginBottom: 24 }}>
+        <div
+          style={{
+            width: 96,
+            height: 96,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #e91e8f, #1b4fff)",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+            flexShrink: 0,
+            fontSize: 28,
+            fontWeight: 600,
+          }}
+        >
+          {profile.photo_url ? (
+            <img
+              src={profile.photo_url}
+              alt={profile.display_name}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <span>{initials}</span>
+          )}
+        </div>
+        <div>
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={handlePhotoSelected}
+          />
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => photoInputRef.current?.click()}
+            disabled={photoBusy}
+          >
+            {photoBusy ? "Uploading…" : profile.photo_url ? "Replace photo" : "Upload photo"}
+          </button>
+          <p style={{ color: "#64748b", fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+            JPEG, PNG, or WebP. Resized to 400×400 before upload.
+          </p>
+        </div>
+      </div>
+
+      {/* Display name */}
+      <div className="form-group">
+        <label>Display name</label>
+        <input
+          type="text"
+          value={displayName}
+          onChange={e => setDisplayName(e.target.value)}
+          placeholder="How your name shows on your profile"
+          maxLength={120}
+        />
+      </div>
+
+      {/* Handle */}
+      <div className="form-group">
+        <label>Handle</label>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "#64748b", fontSize: 14 }}>@</span>
+          <input
+            type="text"
+            value={handle}
+            onChange={e => setHandle(e.target.value.toLowerCase())}
+            placeholder="your-handle"
+            style={{ flex: 1 }}
+            maxLength={30}
+          />
+        </div>
+        <span className="form-hint" style={{
+          color: handleStatus === "taken" ? "#dc2626"
+            : handleStatus === "available" ? "#16a34a"
+            : "#64748b",
+        }}>
+          {handleStatus === "checking" && "Checking availability…"}
+          {handleStatus === "available" && "✓ Available"}
+          {handleStatus === "taken" && (handleReason ?? "Not available.")}
+          {handleStatus === "idle" && profile && (
+            <>Your profile: <a href={`/@${profile.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#1b4fff" }}>placecard-events.app/@{profile.handle}</a></>
+          )}
+        </span>
+      </div>
+
+      {/* City */}
+      <div className="form-group">
+        <label>City</label>
+        <input
+          type="text"
+          value={city}
+          onChange={e => setCity(e.target.value)}
+          placeholder="London, New York…"
+          maxLength={120}
+        />
+        <span className="form-hint">Optional. Shown on your profile under your name.</span>
+      </div>
+
+      {/* Bio */}
+      <div className="form-group">
+        <label>Short bio</label>
+        <textarea
+          value={bio}
+          onChange={e => setBio(e.target.value.slice(0, 280))}
+          placeholder="A line or two about you and what you host."
+          rows={3}
+          maxLength={280}
+        />
+        <span className="form-hint">{bio.length} / 280</span>
+      </div>
+
+      {/* Visibility */}
+      <div className="form-group">
+        <label>Profile visibility</label>
+        <select
+          value={visibility}
+          onChange={e => setVisibility(e.target.value as "public" | "unlisted" | "private")}
+        >
+          <option value="public">Public — anyone can find and view</option>
+          <option value="unlisted">Unlisted — direct link only</option>
+          <option value="private">Private — hidden, members-only later</option>
+        </select>
+      </div>
+
+      {saveError && <p style={{ color: "#dc2626", fontSize: 13, marginTop: 8 }}>{saveError}</p>}
+
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 16 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={handleSave}
+          disabled={saving || handleStatus === "taken"}
+        >
+          {saving ? "Saving…" : saved ? "Saved!" : "Save changes"}
+        </button>
+        <a
+          href={`/@${profile.handle}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: 13, color: "#1b4fff" }}
+        >
+          View public profile →
+        </a>
+      </div>
+    </div>
   );
 }

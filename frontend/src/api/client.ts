@@ -5,6 +5,20 @@ import { supabase } from "../lib/supabase";
 // In local dev, falls back to the local FastAPI server.
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
+// Shape of a profile row as returned by /profiles/me and /profiles/handle/{h}.
+// Defined as a top-level type because both api methods + several frontend
+// components consume it.
+export interface ProfileShape {
+  user_id: string;
+  handle: string;
+  display_name: string;
+  photo_url: string | null;
+  bio: string | null;
+  city: string | null;
+  visibility: "public" | "unlisted" | "private";
+  created_at: string;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   const headers: Record<string, string> = {
@@ -486,6 +500,56 @@ export const api = {
         }[];
       }[];
     }>(`/restaurant-view/${variant}/${shareToken}`),
+
+  // ── Host profiles / @handles ──────────────────────────────────────
+  //
+  // Phase I-A of the host-profile platform layer. Drives `/@:handle`
+  // (the public host page) and Account → Profile (the editor).
+
+  getMyProfile: (displayNameHint?: string) => {
+    const qs = displayNameHint
+      ? `?display_name_hint=${encodeURIComponent(displayNameHint)}`
+      : "";
+    return request<ProfileShape>(`/profiles/me${qs}`);
+  },
+
+  updateMyProfile: (data: {
+    display_name?: string;
+    handle?: string;
+    bio?: string | null;
+    city?: string | null;
+    visibility?: "public" | "unlisted" | "private";
+  }) =>
+    request<ProfileShape>("/profiles/me", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  uploadProfilePhoto: (image_b64: string, mime_type: string) =>
+    request<{ photo_url: string }>("/profiles/me/photo", {
+      method: "POST",
+      body: JSON.stringify({ image_b64, mime_type }),
+    }),
+
+  checkHandleAvailable: (candidate: string) =>
+    request<{ available: boolean; reason: string | null }>(
+      `/profiles/handle/available?candidate=${encodeURIComponent(candidate)}`,
+    ),
+
+  getProfileByHandle: (handle: string) =>
+    request<ProfileShape & {
+      hosted_events: {
+        id: number;
+        name: string;
+        public_token: string | null;
+        start_date: string | null;
+        end_date: string | null;
+        location: string | null;
+        venue: string | null;
+        image_data: string | null;
+        is_private: boolean;
+      }[];
+    }>(`/profiles/handle/${encodeURIComponent(handle)}`),
 
   // Document import — backend extracts table rows from a PDF.
   // The frontend then runs each row through `rowToAttendee` like any other

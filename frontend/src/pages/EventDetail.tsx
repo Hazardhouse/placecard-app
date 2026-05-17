@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client";
+import { useAuth } from "../contexts/AuthContext";
 import type { Event, Attendee, Table, SeatingArrangement, CustomForm } from "../types";
 import AttendeeList from "../components/AttendeeList";
 import SeatingBoard from "../components/SeatingBoard";
@@ -36,6 +37,7 @@ type DrawShape = "round" | "rectangular" | "oval" | "chair-row";
 export default function EventDetail() {
   const { eventId } = useParams<{ eventId: string }>();
   const id = Number(eventId);
+  const { myProfile } = useAuth();
 
   const [event, setEvent] = useState<Event | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
@@ -697,6 +699,18 @@ export default function EventDetail() {
               </>
             )}
           </div>
+
+          {/* "Hosted by" attribution — visible on the host's own view as
+              well as the public event page. Linkable to the host's
+              profile so a guest can land on the salon hub. */}
+          {myProfile && (
+            <div className="event-sidebar-hosted-by">
+              Hosted by{" "}
+              <Link to={`/@${myProfile.handle}`}>
+                {myProfile.display_name}
+              </Link>
+            </div>
+          )}
 
           {(event.start_date || event.location) && (
             <div className="event-sidebar-meta">

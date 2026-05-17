@@ -33,3 +33,7 @@ resend==2.4.0
 # verification). Server-side only; the publishable key lives in the
 # frontend env, never bundled here.
 stripe==11.4.1
+# Profanity check for the @handle picker. Catches slurs / hate terms
+# without us maintaining an enumerated banlist; checked alongside the
+# curated reserved_handles.json (which is for system-collision words).
+better-profanity==0.7.0

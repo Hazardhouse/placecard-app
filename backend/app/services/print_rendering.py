@@ -61,11 +61,12 @@ logger = logging.getLogger("print_rendering")
 BUCKET_ID = "print-orders"
 
 # Per-content-type, per-face target print dimensions (300 DPI, in pixels).
-# Tented cards are folded so each face is 2" × 3.5" (portrait).
-# Flat name cards are 3.5" × 2" landscape.
+# Tented + flat name cards are both 3.5" × 2" landscape per face.
+# (Tented cards fold along the long edge, so each face shows landscape
+# when standing upright on a table.)
 # Programs are 4.25" × 5.5" portrait.
 TARGETS: dict[str, Tuple[int, int, str]] = {
-    "tented-name-cards": (600, 1050, "9:16"),
+    "tented-name-cards": (1050, 600, "16:9"),
     "name-cards": (1050, 600, "16:9"),
     "programs": (1275, 1650, "3:4"),
 }

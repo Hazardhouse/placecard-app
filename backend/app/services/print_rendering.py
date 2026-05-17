@@ -292,15 +292,35 @@ def _build_print_prompt(
         face_size = "4.25 inches wide by 5.5 inches tall portrait"
     elif content_type == "name-cards":
         face_size = "3.5 inches wide by 2 inches tall landscape"
-    else:  # tented-name-cards
-        face_size = "2 inches wide by 3.5 inches tall portrait (one folded face)"
+    else:  # tented-name-cards — folded along the long edge, each face is landscape
+        face_size = "3.5 inches wide by 2 inches tall landscape (one folded face)"
 
+    # IMPORTANT: the reference image we attach is the customer's
+    # design preview, which is often a styled product mockup (card
+    # sitting on a table, with shadow, plants, etc). Gemini will
+    # otherwise reproduce that scene because the visual signal in
+    # the reference outweighs a casual "render as flat" instruction.
+    # The prompt below leads with very explicit negative constraints
+    # so the model treats the reference as a STYLE source only and
+    # outputs the flat printable artwork.
     style_note = (
-        "Match the typography, color palette, layout, and decorative elements from "
-        "the attached reference image. But render as a flat 2D print artwork, NOT a "
-        "3D product photo: no surface, no lighting, no shadow, no perspective. "
-        "Plain background (white or the design's intended background colour). "
-        "Edge-to-edge artwork sized to the card face."
+        "OUTPUT FORMAT — read carefully:\n"
+        "You are producing a print-ready digital artwork file, like a flat PDF "
+        "exported from a design tool, that a printer will send directly to a press.\n\n"
+        "DO NOT render any of the following — they will ruin the print job:\n"
+        "  - a 3D card sitting on a surface, table, fabric, or any background scene\n"
+        "  - product-mockup composition (the card photographed in context)\n"
+        "  - shadows, depth, perspective, lighting, or atmospheric effects\n"
+        "  - a folded card, a card on edge, or any view of the card's physical form\n"
+        "  - vases, eucalyptus, foliage, or other set-dressing from the reference image\n"
+        "  - blank borders, mat boards, or framing around the artwork\n\n"
+        "The reference image attached is a STYLE source only. Extract from it: "
+        "typography family, colour palette, decorative motifs (illustrations, "
+        "ornaments). Use them on a clean flat layout. Ignore everything else "
+        "about the reference (the table, the photo style, the scene).\n\n"
+        "The output must be: the artwork itself, filling the frame edge to edge, "
+        "on the design's intended background colour. As if the printer is opening "
+        "the file in Photoshop to send straight to the press."
     )
 
     if face == "front":

@@ -118,10 +118,16 @@ def create_signed_url(bucket_id: str, path: str, *, expires_in: int = 86400) -> 
             f"Failed to sign {bucket_id}/{path}: HTTP {resp.status_code} — {resp.text[:200]}"
         )
     data = resp.json()
-    signed_path = data.get("signedURL") or data.get("signed_url")
+    signed_path = data.get("signedURL") or data.get("signed_url") or data.get("signedUrl")
     if not signed_path:
         raise RuntimeError(f"Sign response missing signedURL: {data!r}")
-    # Supabase returns a relative URL beginning with "/storage/v1/..."
     if signed_path.startswith("http"):
         return signed_path
+    # Supabase's signed-URL response sometimes omits the "/storage/v1"
+    # gateway prefix and returns just "/object/sign/...". Without the
+    # prefix the URL hits Supabase's main HTTP layer which doesn't know
+    # how to route /object/* and returns {"error":"requested path is
+    # invalid"}. Prepend defensively when missing.
+    if not signed_path.startswith("/storage/v1"):
+        signed_path = f"/storage/v1{signed_path}"
     return f"{_base_url()}{signed_path}"

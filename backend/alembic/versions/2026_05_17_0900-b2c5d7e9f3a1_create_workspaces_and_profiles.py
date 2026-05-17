@@ -68,15 +68,19 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint('user_id'),
         sa.ForeignKeyConstraint(['workspace_id'], ['workspaces.id'], name='fk_profiles_workspace'),
+        # Plain UNIQUE — case-insensitivity is enforced by the handle
+        # service normalizing to lowercase before any write, so a
+        # functional index on lower(handle) would just be redundant
+        # work for the DB. (And Alembic/SQLAlchemy 2.0's create_index
+        # with sa.text(...) trips on Postgres — see the f405 deploy
+        # failure in commit f3c0cf7.)
         sa.UniqueConstraint('handle', name='uq_profiles_handle'),
     )
-    op.create_index('ix_profiles_handle_lower', 'profiles', [sa.text('lower(handle)')], unique=True)
     op.create_index('ix_profiles_workspace', 'profiles', ['workspace_id'])
 
 
 def downgrade() -> None:
     op.drop_index('ix_profiles_workspace', table_name='profiles')
-    op.drop_index('ix_profiles_handle_lower', table_name='profiles')
     op.drop_table('profiles')
     op.drop_index('ix_workspaces_custom_domain', table_name='workspaces')
     op.drop_table('workspaces')

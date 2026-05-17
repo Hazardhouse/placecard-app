@@ -1277,8 +1277,8 @@ function SalonEditorDrawer({
           <div className="form-group">
             <label>Join mode</label>
             <select value={joinMode} onChange={e => setJoinMode(e.target.value as typeof joinMode)}>
-              <option value="request_to_join">Request to join (you approve)</option>
-              <option value="closed">Closed (you add members directly)</option>
+              <option value="request_to_join">Guest list (you approve each request)</option>
+              <option value="closed">Closed (you add guests directly)</option>
               <option value="open">Open (anyone can join)</option>
             </select>
           </div>

@@ -75,7 +75,7 @@ export default function SalonPage({ handle, salonSlug }: { handle: string; salon
   const joinModeLabel =
     salon.join_mode === "open" ? "Open — anyone can join"
     : salon.join_mode === "closed" ? "Invite-only"
-    : "Request to join";
+    : "Guest list — request to be added";
 
   return (
     <div className="profile-page">
@@ -112,7 +112,7 @@ export default function SalonPage({ handle, salonSlug }: { handle: string; salon
               disabled
               title="Coming soon in Phase I-C"
             >
-              {salon.join_mode === "open" ? "Join salon" : "Request to join"}
+              {salon.join_mode === "open" ? "Join salon" : "Get on the guest list"}
             </button>
           )}
         </div>

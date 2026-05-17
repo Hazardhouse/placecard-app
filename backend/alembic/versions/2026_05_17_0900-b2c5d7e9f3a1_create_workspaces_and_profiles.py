@@ -34,6 +34,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Defensive cleanup. The prior failed deploy of f3c0cf7 errored on
+    # an op.create_index with sa.text("lower(handle)") (Alembic+SA 2.0
+    # f405 quirk on Postgres). Despite "Will assume transactional DDL",
+    # the profiles table was left committed while alembic_version was
+    # NOT advanced — so subsequent retries trip on DuplicateTable.
+    # Dropping defensively before the create_tables makes this migration
+    # idempotent across the orphan-state scenario. Safe because nothing
+    # ever auto-provisioned into these tables (the API was unreachable
+    # in the broken state). CASCADE handles any orphan FKs cleanly.
+    op.execute("DROP TABLE IF EXISTS profiles CASCADE")
+    op.execute("DROP TABLE IF EXISTS workspaces CASCADE")
+
     op.create_table(
         'workspaces',
         sa.Column('id', sa.Integer(), nullable=False),

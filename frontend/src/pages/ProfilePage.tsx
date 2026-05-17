@@ -12,9 +12,24 @@ type HostedEvent = {
   venue: string | null;
   image_data: string | null;
   is_private: boolean;
+  salon_id: number | null;
+  salon_slug: string | null;
+  salon_name: string | null;
 };
 
-type FullProfile = ProfileShape & { hosted_events: HostedEvent[] };
+type ProfileSalon = {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  cover_image_url: string | null;
+  event_count: number;
+};
+
+type FullProfile = ProfileShape & {
+  hosted_events: HostedEvent[];
+  salons: ProfileSalon[];
+};
 
 function formatEventDate(start: string | null, end: string | null): string {
   if (!start) return "";
@@ -92,6 +107,35 @@ export default function ProfilePage() {
         </div>
       </header>
 
+      {profile.salons.length > 0 && (
+        <section className="profile-salons">
+          <h2 className="profile-section-title">
+            Salons <span style={{ color: "#94a3b8", fontWeight: 400, fontSize: 14 }}>·  {profile.salons.length}</span>
+          </h2>
+          <div className="profile-salons-grid">
+            {profile.salons.map(s => (
+              <Link
+                key={s.id}
+                to={`/@${profile.handle}/${s.slug}`}
+                className="profile-salon-card-link"
+              >
+                <div
+                  className="profile-salon-card"
+                  style={s.cover_image_url ? { backgroundImage: `url(${s.cover_image_url})` } : undefined}
+                >
+                  <div className="profile-salon-card-body">
+                    <div className="profile-salon-name">{s.name}</div>
+                    <div className="profile-salon-meta">
+                      {s.event_count} event{s.event_count === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="profile-events">
         <h2 className="profile-section-title">Hosted events</h2>
         {profile.hosted_events.length === 0 ? (
@@ -103,6 +147,7 @@ export default function ProfilePage() {
                 key={ev.id}
                 event={ev}
                 hostName={profile.display_name}
+                hostHandle={profile.handle}
               />
             ))}
           </div>
@@ -112,7 +157,9 @@ export default function ProfilePage() {
   );
 }
 
-function ProfileEventCard({ event, hostName }: { event: HostedEvent; hostName: string }) {
+function ProfileEventCard({
+  event, hostName, hostHandle,
+}: { event: HostedEvent; hostName: string; hostHandle: string }) {
   const isPrivate = event.is_private;
   const dateStr = formatEventDate(event.start_date, event.end_date);
 
@@ -125,6 +172,9 @@ function ProfileEventCard({ event, hostName }: { event: HostedEvent; hostName: s
           : undefined}
       >
         {isPrivate && <span className="profile-event-private-label">Private event</span>}
+        {!isPrivate && event.salon_name && (
+          <span className="profile-event-salon-tag">{event.salon_name}</span>
+        )}
       </div>
       <div className="profile-event-card-body">
         <div className="profile-event-card-name">
@@ -142,9 +192,18 @@ function ProfileEventCard({ event, hostName }: { event: HostedEvent; hostName: s
   );
 
   // Private events render as a sealed card with no detail link.
-  if (isPrivate || !event.public_token) return body;
+  if (isPrivate) return body;
+  // Prefer the salon page when the event belongs to one — that's the
+  // canonical context for it. Fall back to the standalone public-event
+  // URL otherwise.
+  const href = event.salon_slug
+    ? `/@${hostHandle}/${event.salon_slug}`
+    : event.public_token
+      ? `/event/${event.public_token}`
+      : null;
+  if (!href) return body;
   return (
-    <Link to={`/event/${event.public_token}`} className="profile-event-card-link">
+    <Link to={href} className="profile-event-card-link">
       {body}
     </Link>
   );

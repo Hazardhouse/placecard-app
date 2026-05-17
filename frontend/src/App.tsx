@@ -9,6 +9,7 @@ import PublicForm from "./pages/PublicForm";
 import RestaurantView from "./pages/RestaurantView";
 import PublicEvent from "./pages/PublicEvent";
 import ProfilePage from "./pages/ProfilePage";
+import SalonPage from "./pages/SalonPage";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import logoSvg from "./assets/placecard-logo.svg";
 import "./App.css";
@@ -105,10 +106,15 @@ function ProtectedLayout() {
 
 function RootDispatcher() {
   const location = useLocation();
-  // `@`-prefixed root paths render the public host profile. Otherwise
+  // `@`-prefixed root paths render public host / salon pages. Otherwise
   // we fall through to the authenticated app. This sidesteps RR7's
   // inability to match a `:param` directly after a literal `@`.
   if (location.pathname.startsWith("/@") && location.pathname.length > 2) {
+    const rest = location.pathname.slice(2); // "dani" or "dani/dinners"
+    const [handle, salonSlug, ...extra] = rest.split("/").filter(Boolean);
+    if (handle && salonSlug && extra.length === 0) {
+      return <SalonPage handle={handle.toLowerCase()} salonSlug={salonSlug.toLowerCase()} />;
+    }
     return <ProfilePage />;
   }
   return <ProtectedLayout />;

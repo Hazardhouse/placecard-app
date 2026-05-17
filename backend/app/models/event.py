@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -16,6 +16,14 @@ class Event(Base):
     # SQLite has no native UUID type. NOT NULL since migration
     # d4e8b1f5a3c2 (2026-05-16) — every event must have an owner.
     user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    # Optional Salon membership — events created before the Salon model
+    # (and one-offs like single weddings) live with salon_id=NULL.
+    # ondelete=SET NULL: removing a salon detaches its events back to
+    # standalone, doesn't cascade-delete them.
+    salon_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("salons.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     name: Mapped[str] = mapped_column(String(255))
     start_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     end_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -35,6 +43,7 @@ class Event(Base):
     image_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    salon = relationship("Salon", back_populates="events")
     attendees = relationship("Attendee", back_populates="event", cascade="all, delete-orphan")
     tables = relationship("Table", back_populates="event", cascade="all, delete-orphan")
     seating_arrangements = relationship("SeatingArrangement", back_populates="event", cascade="all, delete-orphan")

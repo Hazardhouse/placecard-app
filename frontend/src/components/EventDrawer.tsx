@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../api/client";
+import { api, type SalonShape } from "../api/client";
 import type { Event } from "../types";
 import { fileToCompressedDataUrl } from "../utils/image";
 import DatePicker from "./DatePicker";
@@ -112,6 +112,8 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
   const editing = !!event;
 
   const [name, setName] = useState("");
+  const [salonId, setSalonId] = useState<number | "">("");
+  const [salons, setSalons] = useState<SalonShape[]>([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   // Time fields — currently surfaced only for one-day events. The
@@ -144,6 +146,17 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const locationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Load the user's salons once when the drawer opens so the dropdown
+  // can offer existing ones. Cheap call — list is small.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    api.listMySalons()
+      .then(s => { if (!cancelled) setSalons(s); })
+      .catch(() => { /* silent — drawer still works without salons */ });
+    return () => { cancelled = true; };
+  }, [open]);
+
   // Sync form state with the event prop whenever the drawer opens.
   // (Resetting on close as well so the next "create" doesn't show stale data.)
   useEffect(() => {
@@ -151,6 +164,7 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
     setConfirmDelete(false);
     if (event) {
       setName(event.name);
+      setSalonId(event.salon_id ?? "");
       const s = toDateInputValue(event.start_date);
       const e = toDateInputValue(event.end_date);
       setStartDate(s);
@@ -166,7 +180,7 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
       setDescription(event.description || "");
       setImageData(event.image_data || null);
     } else {
-      setName(""); setStartDate(""); setEndDate("");
+      setName(""); setSalonId(""); setStartDate(""); setEndDate("");
       setStartTime(""); setEndTime("");
       setOneDay(true);
       setLocation(""); setVenue(""); setVenueType("");
@@ -239,6 +253,7 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
     // For multi-day events, fall back to the existing date-only behavior.
     const data = {
       name,
+      salon_id: salonId === "" ? null : salonId,
       start_date: combineDateTime(startDate, oneDay ? startTime : ""),
       end_date: combineDateTime(endDate, oneDay ? endTime : ""),
       location: location || null,
@@ -354,6 +369,23 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
               autoFocus={open}
             />
           </div>
+          {/* Salon membership — optional. Standalone events (one-off
+              weddings, surprise parties) leave this blank. */}
+          {salons.length > 0 && (
+            <div className="form-group">
+              <label>Salon</label>
+              <select
+                value={salonId}
+                onChange={e => setSalonId(e.target.value === "" ? "" : Number(e.target.value))}
+              >
+                <option value="">Standalone (no salon)</option>
+                {salons.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <span className="form-hint">Group this event under one of your recurring salons. Manage salons in Account → Host.</span>
+            </div>
+          )}
           <div className="form-group">
             <label>Description *</label>
             <textarea

@@ -23,6 +23,7 @@ import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentUser, get_current_user
@@ -30,6 +31,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.event import Event
 from app.models.profile import Profile
+from app.models.salon import Salon
 from app.models.workspace import Workspace
 from app.schemas.profile import (
     HandleAvailabilityResponse,
@@ -37,6 +39,7 @@ from app.schemas.profile import (
     ProfilePhotoUploadRequest,
     ProfilePhotoUploadResponse,
     ProfileResponse,
+    ProfileSalonSummary,
     ProfileUpdateRequest,
     PublicProfileResponse,
 )
@@ -137,7 +140,8 @@ def _get_or_provision(
     return profile
 
 
-def _event_to_summary(event: Event) -> HostedEventSummary:
+def _event_to_summary(event: Event, salon_lookup: dict[int, Salon]) -> HostedEventSummary:
+    salon = salon_lookup.get(event.salon_id) if event.salon_id else None
     return HostedEventSummary(
         id=event.id,
         name=event.name,
@@ -147,7 +151,10 @@ def _event_to_summary(event: Event) -> HostedEventSummary:
         location=event.location,
         venue=event.venue,
         image_data=event.image_data,
-        is_private=False,  # Phase I-B will wire this up
+        is_private=False,
+        salon_id=salon.id if salon else None,
+        salon_slug=salon.slug if salon else None,
+        salon_name=salon.name if salon else None,
     )
 
 
@@ -331,8 +338,44 @@ def get_profile_by_handle(
         .all()
     )
 
+    # Public salons for this host — drives the "Salons" section on the
+    # profile page and lets us tag each event with its salon name in
+    # one query rather than N.
+    salons = (
+        db.query(Salon)
+        .filter(Salon.host_user_id == profile.user_id)
+        .filter(Salon.visibility != "private")
+        .order_by(Salon.created_at.desc())
+        .all()
+    )
+    salon_lookup = {s.id: s for s in salons}
+
+    # Per-salon event counts (one aggregate query). Guard the IN clause
+    # against an empty list because some dialects choke on it.
+    salon_event_counts: dict[int, int] = {}
+    if salons:
+        rows = (
+            db.query(Event.salon_id, func.count(Event.id))
+            .filter(Event.user_id == profile.user_id)
+            .filter(Event.salon_id.in_([s.id for s in salons]))
+            .group_by(Event.salon_id)
+            .all()
+        )
+        salon_event_counts = {sid: count for sid, count in rows if sid is not None}
+
     base = _profile_to_response(profile)
     return PublicProfileResponse(
         **base.model_dump(),
-        hosted_events=[_event_to_summary(e) for e in hosted],
+        hosted_events=[_event_to_summary(e, salon_lookup) for e in hosted],
+        salons=[
+            ProfileSalonSummary(
+                id=s.id,
+                slug=s.slug,
+                name=s.name,
+                description=s.description,
+                cover_image_url=s.cover_image_url,
+                event_count=salon_event_counts.get(s.id, 0),
+            )
+            for s in salons
+        ],
     )

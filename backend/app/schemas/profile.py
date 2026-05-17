@@ -30,13 +30,29 @@ class HostedEventSummary(BaseModel):
     # the frontend renders the greyed-out variant once the column
     # ships in Phase I-B.
     is_private: bool = False
+    # The salon this event belongs to, if any. Lets the profile page
+    # render an "in: Wednesday Dinners" tag without an extra round-trip.
+    salon_id: Optional[int] = None
+    salon_slug: Optional[str] = None
+    salon_name: Optional[str] = None
+
+
+class ProfileSalonSummary(BaseModel):
+    """Slim salon row for the public profile's salons section."""
+    id: int
+    slug: str
+    name: str
+    description: Optional[str] = None
+    cover_image_url: Optional[str] = None
+    event_count: int = 0
 
 
 class PublicProfileResponse(ProfileResponse):
-    """Public profile + the visible events the user has hosted.
-    For private profiles, the route returns 404 instead.
+    """Public profile + the visible events the user has hosted + the
+    public salons they run. Private profiles 404 before this is built.
     """
     hosted_events: List[HostedEventSummary] = []
+    salons: List[ProfileSalonSummary] = []
 
 
 class ProfileUpdateRequest(BaseModel):

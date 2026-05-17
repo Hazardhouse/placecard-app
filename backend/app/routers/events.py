@@ -1,6 +1,6 @@
 import secrets
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -63,12 +63,29 @@ def list_events(
     return result
 
 
+def _validate_salon_ownership(db: Session, salon_id: Optional[int], user: CurrentUser) -> None:
+    """Ensure the caller owns the salon they're attaching an event to.
+    Without this, a user could attach their event to another host's
+    salon by guessing IDs.
+    """
+    if salon_id is None:
+        return
+    from app.models.salon import Salon
+    salon = db.query(Salon).filter(Salon.id == salon_id).first()
+    if not salon:
+        raise HTTPException(status_code=400, detail="Salon not found.")
+    if not user.is_anonymous and salon.host_user_id != user.id:
+        # 404 not 403 — don't leak existence of another user's salon.
+        raise HTTPException(status_code=400, detail="Salon not found.")
+
+
 @router.post("", response_model=EventResponse, status_code=201)
 def create_event(
     data: EventCreate,
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _validate_salon_ownership(db, data.salon_id, user)
     event = Event(
         **data.model_dump(),
         public_token=secrets.token_urlsafe(32),
@@ -95,9 +112,13 @@ def get_event(event: Event = Depends(get_user_event)):
 def update_event(
     data: EventUpdate,
     event: Event = Depends(get_user_event),
+    user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    for key, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    if "salon_id" in updates:
+        _validate_salon_ownership(db, updates["salon_id"], user)
+    for key, value in updates.items():
         setattr(event, key, value)
     db.commit()
     db.refresh(event)

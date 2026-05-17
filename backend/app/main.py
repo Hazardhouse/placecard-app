@@ -16,7 +16,8 @@ from app.models import design as design_models  # noqa: F401
 from app.models import print_order as print_order_models  # noqa: F401
 from app.models import workspace as workspace_models  # noqa: F401
 from app.models import profile as profile_models  # noqa: F401
-from app.routers import attendees, events, printing, places, seating, tables, schedule, users, settings as settings_router, custom_forms, brand_colors, name_cards, restaurant_share, document_import, unsubscribe, designs, stripe_webhook, profiles
+from app.models import salon as salon_models  # noqa: F401
+from app.routers import attendees, events, printing, places, seating, tables, schedule, users, settings as settings_router, custom_forms, brand_colors, name_cards, restaurant_share, document_import, unsubscribe, designs, stripe_webhook, profiles, salons
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,8 @@ app.include_router(unsubscribe.router)
 app.include_router(designs.router)
 app.include_router(profiles.router)
 app.include_router(profiles.public_router)
+app.include_router(salons.router)
+app.include_router(salons.public_router)
 
 
 @app.get("/api/health")

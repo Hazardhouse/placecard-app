@@ -12,6 +12,7 @@ export interface Event {
   attendee_count: number;
   public_token: string | null;
   image_data: string | null;
+  salon_id: number | null;
 }
 
 export interface Attendee {

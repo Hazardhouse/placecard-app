@@ -19,6 +19,19 @@ export interface ProfileShape {
   created_at: string;
 }
 
+export interface SalonShape {
+  id: number;
+  host_user_id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  cover_image_url: string | null;
+  visibility: "public" | "unlisted" | "private";
+  join_mode: "closed" | "request_to_join" | "open";
+  created_at: string;
+  event_count: number;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   const headers: Record<string, string> = {
@@ -548,8 +561,72 @@ export const api = {
         venue: string | null;
         image_data: string | null;
         is_private: boolean;
+        salon_id: number | null;
+        salon_slug: string | null;
+        salon_name: string | null;
+      }[];
+      salons: {
+        id: number;
+        slug: string;
+        name: string;
+        description: string | null;
+        cover_image_url: string | null;
+        event_count: number;
       }[];
     }>(`/profiles/handle/${encodeURIComponent(handle)}`),
+
+  // ── Salons ────────────────────────────────────────────────────────
+
+  listMySalons: () => request<SalonShape[]>("/salons/me"),
+
+  createSalon: (data: {
+    name: string;
+    slug?: string;
+    description?: string;
+    cover_image_url?: string | null;
+    visibility?: "public" | "unlisted" | "private";
+    join_mode?: "closed" | "request_to_join" | "open";
+  }) =>
+    request<SalonShape>("/salons", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateSalon: (salonId: number, data: {
+    name?: string;
+    slug?: string;
+    description?: string | null;
+    cover_image_url?: string | null;
+    visibility?: "public" | "unlisted" | "private";
+    join_mode?: "closed" | "request_to_join" | "open";
+  }) =>
+    request<SalonShape>(`/salons/${salonId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSalon: (salonId: number) =>
+    request<void>(`/salons/${salonId}`, { method: "DELETE" }),
+
+  listHostSalons: (handle: string) =>
+    request<SalonShape[]>(`/salons/by-host/${encodeURIComponent(handle)}`),
+
+  getSalonDetail: (handle: string, salonSlug: string) =>
+    request<SalonShape & {
+      host_handle: string;
+      host_display_name: string;
+      host_photo_url: string | null;
+      events: {
+        id: number;
+        name: string;
+        public_token: string | null;
+        start_date: string | null;
+        end_date: string | null;
+        location: string | null;
+        venue: string | null;
+        image_data: string | null;
+      }[];
+    }>(`/salons/by-host/${encodeURIComponent(handle)}/${encodeURIComponent(salonSlug)}`),
 
   // Document import — backend extracts table rows from a PDF.
   // The frontend then runs each row through `rowToAttendee` like any other

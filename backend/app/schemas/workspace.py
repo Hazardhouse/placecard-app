@@ -28,6 +28,10 @@ class InviteRequest(BaseModel):
     role: str = "viewer"  # 'owner' is reserved for the workspace creator
 
 
+class RoleChangeRequest(BaseModel):
+    role: str  # 'admin' | 'editor' | 'viewer'  ('owner' not assignable)
+
+
 class InviteResponse(BaseModel):
     """Returned by POST /api/workspaces/{id}/invites.
     `existing_user` tells the frontend which email branch fired so the

@@ -18,6 +18,7 @@ from app.schemas.event import EventCreate, EventResponse, EventUpdate
 from app.services.workspace_access import (
     active_workspace_ids,
     ensure_personal_workspace,
+    require_edit_access,
 )
 
 router = APIRouter(prefix="/api/events", tags=["events"])
@@ -63,6 +64,20 @@ def get_user_event(
     return event
 
 
+def get_user_event_for_edit(
+    event: Event = Depends(get_user_event),
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Event:
+    """Same lookup as get_user_event but additionally enforces edit
+    permission. Used as the dep on every mutation route — viewers
+    can land on the event detail page but their PATCH/DELETE calls
+    are rejected at the API.
+    """
+    require_edit_access(event.workspace_id, event.user_id, user, db)
+    return event
+
+
 @router.get("", response_model=List[EventResponse])
 def list_events(
     user: CurrentUser = Depends(get_current_user),
@@ -97,10 +112,24 @@ def list_events(
         .all()
     )
 
+    # Workspace names for the cards — frontend renders a tag when the
+    # caller sees events from more than one workspace.
+    from app.models.workspace import Workspace
+    workspace_ids_in_results = {e.workspace_id for e in events if e.workspace_id is not None}
+    workspace_names: dict[int, str] = {}
+    if workspace_ids_in_results:
+        workspace_names = dict(
+            db.query(Workspace.id, Workspace.name)
+            .filter(Workspace.id.in_(workspace_ids_in_results))
+            .all()
+        )
+
     result = []
     for event in events:
         resp = EventResponse.model_validate(event)
         resp.attendee_count = counts.get(event.id, 0)
+        if event.workspace_id is not None:
+            resp.workspace_name = workspace_names.get(event.workspace_id)
         result.append(resp)
     return result
 
@@ -160,7 +189,7 @@ def get_event(event: Event = Depends(get_user_event)):
 @router.patch("/{event_id}", response_model=EventResponse)
 def update_event(
     data: EventUpdate,
-    event: Event = Depends(get_user_event),
+    event: Event = Depends(get_user_event_for_edit),
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -259,7 +288,7 @@ def get_event_calendar(token: str, db: Session = Depends(get_db)) -> Response:
 
 @router.delete("/{event_id}", status_code=204)
 def delete_event(
-    event: Event = Depends(get_user_event),
+    event: Event = Depends(get_user_event_for_edit),
     db: Session = Depends(get_db),
 ):
     db.delete(event)
@@ -268,7 +297,7 @@ def delete_event(
 
 @router.post("/{event_id}/duplicate", response_model=EventResponse, status_code=201)
 def duplicate_event(
-    source: Event = Depends(get_user_event),
+    source: Event = Depends(get_user_event_for_edit),
     db: Session = Depends(get_db),
 ):
     """Deep-clone an event with all of its history: attendees, tables,

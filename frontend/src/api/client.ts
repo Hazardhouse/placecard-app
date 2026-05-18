@@ -390,6 +390,12 @@ export const api = {
   removeWorkspaceMember: (memberId: number) =>
     request<void>(`/workspaces/me/members/${memberId}`, { method: "DELETE" }),
 
+  updateWorkspaceMemberRole: (memberId: number, role: "admin" | "editor" | "viewer") =>
+    request<WorkspaceMember>(
+      `/workspaces/me/members/${memberId}`,
+      { method: "PATCH", body: JSON.stringify({ role }) },
+    ),
+
   listMyPendingInvites: () =>
     request<PendingInvite[]>("/workspaces/me/pending-invites"),
 

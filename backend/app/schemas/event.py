@@ -51,5 +51,10 @@ class EventResponse(BaseModel):
     public_token: Optional[str] = None
     image_data: Optional[str] = None
     salon_id: Optional[int] = None
+    # Display label for the workspace this event belongs to. Frontend
+    # uses it to render a workspace tag on cards when the caller has
+    # access to events from more than one workspace (invited member
+    # case). Empty string when the event has no workspace stamp yet.
+    workspace_name: Optional[str] = None
 
     model_config = {"from_attributes": True}

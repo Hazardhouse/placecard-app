@@ -97,6 +97,13 @@ export default function EventList() {
   };
 
   const upcomingCount = events.filter(e => !isEventPast(e)).length;
+  // If the caller has access to events from more than one workspace
+  // (i.e. they're an invited member of someone else's workspace),
+  // render a small workspace tag on each card so the context is clear.
+  const distinctWorkspaceNames = new Set(
+    events.map(e => e.workspace_name).filter((n): n is string => !!n),
+  );
+  const showWorkspaceTags = distinctWorkspaceNames.size > 1;
   const pastCount = events.filter(isEventPast).length;
   const filteredEvents = events.filter(e => (filter === "past" ? isEventPast(e) : !isEventPast(e)));
 
@@ -158,6 +165,20 @@ export default function EventList() {
               </button>
             </div>
             <Link to={`/events/${event.id}`} className="event-card-link">
+              {showWorkspaceTags && event.workspace_name && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: "#1b4fff",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                    marginBottom: 4,
+                  }}
+                >
+                  {event.workspace_name}
+                </div>
+              )}
               <h3 className="event-card-title">
                 {event.name}
                 {" "}

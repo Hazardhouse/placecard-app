@@ -30,6 +30,7 @@ from app.schemas.workspace import (
     InviteRequest,
     InviteResponse,
     PendingInviteResponse,
+    RoleChangeRequest,
     WorkspaceMemberResponse,
 )
 from app.services.supabase_admin import find_user_id_by_email, send_signup_invite
@@ -223,6 +224,40 @@ def remove_member(
         raise HTTPException(status_code=400, detail="Use 'leave workspace' to remove yourself.")
     member.status = "removed"
     db.commit()
+
+
+@router.patch("/me/members/{member_id}", response_model=WorkspaceMemberResponse)
+def update_member_role(
+    member_id: int,
+    payload: RoleChangeRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Change a member's role. Owner/admin only. Owner role is not
+    assignable through this endpoint — the workspace creator's
+    ownership is set at creation time and can only be transferred
+    via a deliberate hand-off flow (Phase II)."""
+    if user.is_anonymous:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    new_role = (payload.role or "").lower()
+    if new_role not in _VALID_INVITE_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"role must be one of {sorted(_VALID_INVITE_ROLES)}.",
+        )
+    member = db.query(WorkspaceMember).filter(WorkspaceMember.id == member_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if not can_manage_members(membership_role(db, user, member.workspace_id)):
+        raise HTTPException(status_code=403, detail="You don't have permission to change roles.")
+    if member.role == "owner":
+        raise HTTPException(status_code=400, detail="The workspace owner's role can't be changed.")
+    if member.user_id == user.id:
+        raise HTTPException(status_code=400, detail="You can't change your own role.")
+    member.role = new_role
+    db.commit()
+    db.refresh(member)
+    return _member_to_response(member, db)
 
 
 # ── Pending invites (notifications for the invitee) ──────────────────

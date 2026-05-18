@@ -13,6 +13,7 @@ export interface Event {
   public_token: string | null;
   image_data: string | null;
   salon_id: number | null;
+  workspace_name: string | null;
 }
 
 export interface Attendee {

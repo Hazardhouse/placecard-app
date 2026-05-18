@@ -76,6 +76,33 @@ def can_manage_members(role: Optional[str]) -> bool:
     return role in {"owner", "admin"}
 
 
+def require_edit_access(event_workspace_id: Optional[int], event_user_id: str, user: CurrentUser, db: Session) -> None:
+    """Raise 403 if the caller can't mutate this event.
+
+    Edit access = caller is an active member of the event's workspace
+    with role 'owner' / 'admin' / 'editor'. OR the caller is the
+    original creator (legacy fallback for events created before the
+    workspace_id backfill — drop once 100% covered).
+
+    Anonymous callers in dev mode (`require_auth=False`) bypass —
+    same convention as the read-side `get_user_event` dep.
+    """
+    from fastapi import HTTPException
+    if user.is_anonymous:
+        return
+    # Legacy fallback: original creator can always edit, regardless of
+    # role on the workspace. Will be removed once every event has a
+    # workspace_id and a proper membership row.
+    if event_user_id == user.id:
+        return
+    if event_workspace_id is None:
+        # No workspace stamp + not the creator = no edit path.
+        raise HTTPException(status_code=403, detail="You don't have permission to edit this event.")
+    role = membership_role(db, user, event_workspace_id)
+    if not can_edit(role):
+        raise HTTPException(status_code=403, detail="You don't have permission to edit this event.")
+
+
 def ensure_personal_workspace(db: Session, user: CurrentUser) -> Workspace:
     """Find-or-create the user's personal workspace AND ensure they're
     an owner member of it. Idempotent — safe to call on every

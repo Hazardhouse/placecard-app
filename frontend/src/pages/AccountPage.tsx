@@ -278,11 +278,21 @@ export default function AccountPage() {
     setShowInvite(false);
   };
 
-  const handleRoleChange = (userId: string, role: Role) => {
-    // Optimistic local update; the backend role-update endpoint is
-    // a Slice 4 follow-up. Keeps the dropdown responsive in the
-    // meantime so the UI doesn't feel broken.
+  const handleRoleChange = async (userId: string, role: Role) => {
+    // Optimistic: update locally so the dropdown feels responsive.
+    // The server is the source of truth — if it rejects (403,
+    // can't-demote-owner, etc) we refresh from server to revert.
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u));
+    try {
+      if (role === "Owner") return;  // owners aren't reassignable
+      await api.updateWorkspaceMemberRole(
+        Number(userId),
+        role.toLowerCase() as "admin" | "editor" | "viewer",
+      );
+    } catch {
+      // Server rejected — pull truth back.
+    }
+    void refreshUsers();
   };
 
   const handleRemoveUser = async (userId: string) => {

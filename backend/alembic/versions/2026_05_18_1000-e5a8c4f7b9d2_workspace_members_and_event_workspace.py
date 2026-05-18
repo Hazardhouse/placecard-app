@@ -124,14 +124,21 @@ def upgrade() -> None:
 
         # Owner membership row. Skip if it somehow exists already.
         # invited_email left NULL — owner wasn't invited.
+        #
+        # Casts on :user_id are required: Postgres can't deduce a
+        # consistent type for the parameter when it appears in both a
+        # SELECT projection (defaults to `text`) and a WHERE comparison
+        # against the varchar user_id column. Without explicit casts
+        # the statement preparation errors with f405 "AmbiguousParameter
+        # — inconsistent types deduced for parameter $2 (text vs varchar)".
         conn.execute(
             sa.text(
                 "INSERT INTO workspace_members "
                 "(workspace_id, user_id, role, status, accepted_at) "
-                "SELECT :workspace_id, :user_id, 'owner', 'active', NOW() "
+                "SELECT :workspace_id, CAST(:user_id AS VARCHAR), 'owner', 'active', NOW() "
                 "WHERE NOT EXISTS ("
                 "  SELECT 1 FROM workspace_members "
-                "  WHERE workspace_id = :workspace_id AND user_id = :user_id"
+                "  WHERE workspace_id = :workspace_id AND user_id = CAST(:user_id AS VARCHAR)"
                 ")"
             ),
             {"workspace_id": workspace_id, "user_id": user_id},

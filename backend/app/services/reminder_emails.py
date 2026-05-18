@@ -141,9 +141,14 @@ def check_and_send_event_reminder_emails() -> None:
         for ev in week_events:
             week_total += _send_for_event(db, ev, "week")
 
-        # ── Day-before window: 12 to 36 hours out ──
-        day_lower = now + timedelta(hours=12)
-        day_upper = now + timedelta(hours=36)
+        # ── Day-before window: 18 to 30 hours out (~24h ±6h) ──
+        # Earlier this was [12, 36] which was wide enough to catch events
+        # ~36h away (= the day AFTER tomorrow) and fire a "your event is
+        # tomorrow" email two days early. Tightening to ±6h around 24h —
+        # still tolerates several missed scheduler ticks (job runs hourly)
+        # while keeping the reminder accurate to "tomorrow" in any timezone.
+        day_lower = now + timedelta(hours=18)
+        day_upper = now + timedelta(hours=30)
         day_events = (
             db.query(Event)
             .filter(

@@ -61,6 +61,11 @@ export default function EventDetail() {
   const [eventForm, setEventForm] = useState<CustomForm | null>(null);
   const [maximizeConversation, setMaximizeConversation] = useState(false);
   const [autoSeating, setAutoSeating] = useState(false);
+  // Counter signal for the ScheduleTab. Each bump tells the tab to
+  // open its "New schedule item" drawer on its next render. Used by
+  // the Seating tab's empty-state CTA so the user lands directly on
+  // the create form instead of on the empty schedule list.
+  const [scheduleOpenAddSignal, setScheduleOpenAddSignal] = useState(0);
   // autoSeatRef removed — previously exposed for parent-triggered
   // auto-seating; SeatingBoard now handles its own auto-seat button.
   const initedRef = useRef(false);
@@ -929,6 +934,7 @@ export default function EventDetail() {
           onItemsChange={handleScheduleItemsChange}
           eventStartDate={event?.start_date ?? null}
           eventEndDate={event?.end_date ?? null}
+          openAddSignal={scheduleOpenAddSignal}
         />
       )}
 
@@ -1160,7 +1166,15 @@ export default function EventDetail() {
                 </p>
                 <button
                   className="btn btn-primary"
-                  onClick={() => setActiveTab("schedule")}
+                  onClick={() => {
+                    // Switch tabs first, then bump the open-add signal
+                    // so the ScheduleTab pops its New-Schedule-Item
+                    // drawer immediately on render. requires_seating
+                    // defaults to true in EMPTY_FORM so the user just
+                    // has to fill in the title + dates and save.
+                    setActiveTab("schedule");
+                    setScheduleOpenAddSignal(s => s + 1);
+                  }}
                 >
                   Add a schedule item
                 </button>

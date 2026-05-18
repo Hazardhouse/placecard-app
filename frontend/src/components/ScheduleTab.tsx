@@ -35,6 +35,12 @@ interface Props {
   // have to type it for every item.
   eventStartDate?: string | null;
   eventEndDate?: string | null;
+  // Counter signal from the parent. Each time the value increments
+  // (e.g. the Seating tab's "Add a schedule item" CTA fires), we open
+  // the new-item drawer automatically. A counter rather than a bool
+  // means a second CTA click reopens even if the user dismissed the
+  // drawer in between — there's nothing to reset.
+  openAddSignal?: number;
 }
 
 function formatTime(dt: string | null) {
@@ -280,7 +286,7 @@ function parseProgram(text: string) {
   return items;
 }
 
-export default function ScheduleTab({ eventId, items, onItemsChange, eventStartDate, eventEndDate }: Props) {
+export default function ScheduleTab({ eventId, items, onItemsChange, eventStartDate, eventEndDate, openAddSignal }: Props) {
   // The event's date in YYYY-MM-DD form, only set when the event is
   // a single-day event (start and end on the same day, or end is null).
   const eventSingleDate = (() => {
@@ -459,6 +465,21 @@ export default function ScheduleTab({ eventId, items, onItemsChange, eventStartD
     setEditingId(null);
     setShowForm(true);
   };
+
+  // Open the new-item drawer whenever the parent bumps the signal
+  // counter. Used today by the Seating tab's "Add a schedule item"
+  // CTA: it switches activeTab → schedule AND bumps the counter so
+  // the user lands directly on the form, not on the empty schedule
+  // list. Skips the initial render (counter === undefined) so we
+  // don't auto-pop the drawer every time someone opens the tab.
+  useEffect(() => {
+    if (openAddSignal === undefined || openAddSignal === 0) return;
+    openAdd();
+    // openAdd is recreated on every render but its captured state
+    // (eventSingleDate) is the only dependency we actually care about
+    // — the signal counter is the real trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAddSignal]);
 
   const openEdit = (item: ScheduleItem) => {
     setVenueName(item.venue_name ?? "");

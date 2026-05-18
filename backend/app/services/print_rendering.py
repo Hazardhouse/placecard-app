@@ -152,15 +152,44 @@ async def _render_and_notify(order_id: int) -> None:
         db.close()
 
 
+SAMPLE_COUNT = 3
+"""How many candidate template renders to produce per order.
+
+Gemini's flat-vs-mockup output for the front face is roughly 50/50 per
+call. Rendering 3 candidates gives ~87.5% odds that at least one comes
+out flat; the operator (Dani) picks the cleanest result as a template
+and generates the remaining per-attendee files herself with the
+attached attendee CSV.
+
+Rationale: a 50-card order with full per-attendee rendering would be
+100 Gemini calls. With template-mode it's 6 calls (3 fronts + 3 backs).
+Drops per-order compute cost from ~$4 to ~$0.25.
+"""
+
+
 async def _render_all(
     order: PrintOrder,
     event_name: str,
     front_ref: DesignView,
     back_ref: Optional[DesignView],
 ) -> List[RenderResult]:
-    """Fan out per-attendee front+back rendering with bounded concurrency."""
+    """Render a small set of sample templates (front + back) for the
+    operator. NOT per-attendee — operator handles bulk generation.
+
+    Picks SAMPLE_COUNT attendees from the order to use as text content
+    in each sample. Cycles through attendees if the order has fewer
+    than SAMPLE_COUNT.
+    """
     sem = asyncio.Semaphore(4)
     attendees = order.attendees_json or []
+    if not attendees:
+        return []
+
+    # Sample attendees: cycle if fewer than SAMPLE_COUNT to still
+    # produce SAMPLE_COUNT independent Gemini attempts (each call has
+    # natural variance so 3 attempts of the same name still gives
+    # 3 different renders).
+    samples = [attendees[i % len(attendees)] for i in range(SAMPLE_COUNT)]
 
     async def render_one(attendee: dict) -> RenderResult:
         async with sem:
@@ -173,16 +202,16 @@ async def _render_all(
             )
 
     results = await asyncio.gather(
-        *(render_one(a) for a in attendees),
+        *(render_one(a) for a in samples),
         return_exceptions=True,
     )
 
     final: List[RenderResult] = []
     for i, r in enumerate(results):
-        attendee = attendees[i]
-        name = attendee.get("name", f"Guest {i + 1}")
+        attendee = samples[i]
+        name = attendee.get("name", f"Sample {i + 1}")
         if isinstance(r, Exception):
-            logger.exception("Render exception for attendee %r", name, exc_info=r)
+            logger.exception("Render exception for sample %d (%r)", i + 1, name, exc_info=r)
             final.append(RenderResult(attendee_name=name, front_url=None, back_url=None, error=str(r)))
         else:
             final.append(r)

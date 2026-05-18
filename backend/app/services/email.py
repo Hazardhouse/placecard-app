@@ -648,13 +648,18 @@ def _money_str(amount_cents: int, currency: str) -> str:
     return f"{symbol}{amount_cents / 100:.2f}"
 
 
-def _render_print_files_section(render_results) -> str:
+def _render_print_files_section(render_results, *, total_attendees: int | None = None) -> str:
     """Build the per-attendee 'Print files' section of the fulfillment
     email — a list of attendee names with front/back download links.
 
     Returns "" when no render results are provided (the synchronous
     fallback path; pre-render-job behaviour). Renders a clear table
     with successes + failures broken out when results are present.
+
+    `total_attendees` is the full headcount on the order. When the
+    render pipeline only generated a sample (e.g. 3 templates for a
+    24-attendee order), the status line reads "3 of 24 attendees
+    rendered" so the operator knows the rest aren't here.
     """
     if not render_results:
         return ""
@@ -683,9 +688,10 @@ def _render_print_files_section(render_results) -> str:
             f'</tr>'
         )
 
+    denominator = total_attendees if total_attendees is not None else len(render_results)
     status_line = (
         f"<p style='margin:0 0 8px;font-size:13px;color:#64748b;'>"
-        f"{len(succeeded)} of {len(render_results)} attendees rendered"
+        f"{len(succeeded)} of {denominator} attendees rendered"
         + (f" · {len(failed)} failed" if failed else "")
         + "</p>"
     )
@@ -796,7 +802,7 @@ def send_print_order_fulfillment(order, render_results=None) -> bool:
             <a href="mailto:{order.shipping_email}" style="color:#1b4fff;">{order.shipping_email}</a>
           </p>
 
-          {_render_print_files_section(render_results)}
+          {_render_print_files_section(render_results, total_attendees=attendee_count)}
 
           <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Attachments</h2>
           <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">

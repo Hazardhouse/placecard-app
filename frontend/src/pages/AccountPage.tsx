@@ -42,7 +42,7 @@ interface User {
 const ROLES: Role[] = ["Admin", "Editor", "Viewer"];
 
 export default function AccountPage() {
-  const { updateUser: authUpdateUser } = useAuth();
+  const { user: authUser, updateUser: authUpdateUser } = useAuth();
   // The header-dropdown badge reads from the same PendingInvitesContext,
   // so accept / decline here calls `refresh()` to keep the count in
   // lockstep without having to plumb a prop through.
@@ -94,8 +94,17 @@ export default function AccountPage() {
         api.listMyPendingInvites(),
       ]);
       setUsers(members.map(m => {
-        const display = m.display_name || (m.email ? m.email.split("@")[0] : "");
-        const initials = (m.display_name || m.email || "?")
+        // Owner-membership rows backfilled by the original migration
+        // have `invited_email = NULL` (owners weren't "invited"), so the
+        // Users-panel row for the workspace owner shows up without an
+        // email. When the row IS the current authenticated user, fall
+        // back to their JWT email so the panel reads consistently with
+        // every other row.
+        const emailFromAuth =
+          m.user_id && m.user_id === authUser?.id ? authUser?.email ?? "" : "";
+        const memberEmail = m.email || emailFromAuth;
+        const display = m.display_name || (memberEmail ? memberEmail.split("@")[0] : "");
+        const initials = (m.display_name || memberEmail || "?")
           .split(/\s+|@/)
           .filter(Boolean)
           .map(p => p[0])
@@ -109,7 +118,7 @@ export default function AccountPage() {
           id: String(m.id),
           initials,
           name: display,
-          email: m.email || "",
+          email: memberEmail,
           phone: "",
           role,
           status: m.status === "active" ? "active" : "pending",
@@ -121,7 +130,10 @@ export default function AccountPage() {
     } finally {
       setUsersLoading(false);
     }
-  }, []);
+    // authUser is read inside (to fill the owner row's missing email)
+    // — needs to be in the dep array so a fresh login picks up the new
+    // identity instead of staying bound to the previous one.
+  }, [authUser?.id, authUser?.email]);
 
   useEffect(() => {
     void refreshUsers();

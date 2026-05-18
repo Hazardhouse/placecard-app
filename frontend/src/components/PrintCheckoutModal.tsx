@@ -240,9 +240,11 @@ export default function PrintCheckoutModal({
             />
             <div className="order-preview-label">
               {attendees.length} card{attendees.length === 1 ? "" : "s"}
-              <div style={{ fontSize: 12, color: "#64748b", fontWeight: 400, marginTop: 4 }}>
-                2&ndash;3 day turnaround
-              </div>
+              {!rush && (
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 400, marginTop: 4 }}>
+                  2&ndash;3 day turnaround
+                </div>
+              )}
             </div>
           </div>
 

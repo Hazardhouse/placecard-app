@@ -82,11 +82,9 @@ function ProtectedLayout() {
       <header className="app-header">
         <Link to="/" className="logo"><img src={logoSvg} alt="PlaceCard" className="logo-img" /></Link>
         <div className="header-right">
-          <div className="presence-avatars">
-            <div className="presence-avatar" style={{ background: "#e91e8f" }} title="Dani Bradford">DB</div>
-            <div className="presence-avatar" style={{ background: "#1b4fff" }} title="Matthew">M</div>
-            <div className="presence-avatar" style={{ background: "#16a34a" }} title="Surya">S</div>
-          </div>
+          {/* Multi-user presence avatars will render here once the
+              invite flow persists team members. Hidden for solo
+              accounts (the only mode today). */}
           <UserDropdown />
         </div>
       </header>

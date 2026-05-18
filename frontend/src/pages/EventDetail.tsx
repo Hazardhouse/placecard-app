@@ -961,6 +961,36 @@ export default function EventDetail() {
 
       {activeTab === "seating" && (
         <div className="seating-view">
+          {/* Seating arrangements only get created when a schedule item
+              is marked "Requires seating." With zero arrangements, the
+              whole canvas + auto-seat + drag-and-drop pipeline has
+              nothing to write into and silently no-ops. Gate the view
+              behind a clear CTA so the user knows what to do next
+              instead of dragging into a black hole. */}
+          {arrangements.length === 0 ? (
+            <div className="seating-empty-state">
+              <div className="seating-empty-state-card">
+                <svg className="seating-empty-state-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+                <h2 className="seating-empty-state-title">No seating event yet</h2>
+                <p className="seating-empty-state-body">
+                  To seat your guests, please create an event in the
+                  schedule and mark it as requiring seating.
+                </p>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setActiveTab("schedule")}
+                >
+                  Add a schedule item
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
           {attendees.length > 0 && (
             <div className="attendee-form-banner seating-banner">
               <select
@@ -1136,6 +1166,8 @@ export default function EventDetail() {
               onMaximizeConversationChange={setMaximizeConversation}
             />
           </div>
+            </>
+          )}
         </div>
       )}
         </div>

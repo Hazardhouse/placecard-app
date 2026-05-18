@@ -2292,6 +2292,60 @@ select:focus {
   gap: 8px;
 }
 
+/* Empty-state card rendered when no seating arrangement exists yet
+   (i.e. no schedule item is marked "Requires seating"). Replaces the
+   entire Seating tab content with a single centred CTA that jumps to
+   the Schedule tab. */
+.seating-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  padding: 40px 20px;
+}
+
+.seating-empty-state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  max-width: 440px;
+  padding: 36px 32px;
+  background: #ffffff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.seating-empty-state-icon {
+  color: #1b4fff;
+  opacity: 0.6;
+}
+
+.seating-empty-state-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.seating-empty-state-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.seating-empty-state-card .btn-primary {
+  margin-top: 4px;
+  /* The default .btn-primary has tighter horizontal padding when sized
+     for toolbars — the empty-state CTA is meant to read as a primary
+     action so we bump it slightly. */
+  padding: 10px 22px;
+  font-size: 14px;
+}
+
 .arrangement-selector {
   display: flex;
   gap: 8px;

@@ -724,6 +724,7 @@ def _build_print_order_email_html(
     include_stripe_id: bool,
     include_csv_in_attachments_list: bool,
     headline: str,
+    subtitle: str,
 ) -> str:
     """Shared HTML body builder for both the operator fulfillment email
     and the customer receipt.
@@ -735,7 +736,10 @@ def _build_print_order_email_html(
       - `include_csv_in_attachments_list`: mention the attendee CSV in
         the body's attachments list. Operator only (the customer doesn't
         get a CSV attached).
-      - `headline`: the H1 — "New print order #X" vs "Your PlaceCard order #X".
+      - `headline`: the H1 — operator: "New print order #X" ; customer:
+        "Your PlaceCard Order is a go!".
+      - `subtitle`: the grey line under the H1. Customer version
+        includes the order number here since the H1 doesn't carry it.
     """
     total = _money_str(order.total_amount_cents, order.currency)
     base = _money_str(order.base_amount_cents, order.currency)
@@ -787,7 +791,7 @@ def _build_print_order_email_html(
       <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;">
         <tr><td>
           <h1 style="margin:0 0 6px;font-size:22px;color:#0f172a;">{headline}</h1>
-          <p style="margin:0 0 24px;color:#64748b;font-size:14px;">{order.quantity} × {order.content_type} · {attendee_count} attendees · {total}</p>
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;">{subtitle}</p>
 
           <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Print specs</h2>
           <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
@@ -859,6 +863,8 @@ def send_print_order_fulfillment(order, render_results=None) -> bool:
             logger.warning("FULFILLMENT_EMAIL not set — skipping fulfillment email")
             return False
 
+        attendee_count = len(order.attendees_json or [])
+        total = _money_str(order.total_amount_cents, order.currency)
         html = _build_print_order_email_html(
             order,
             render_results,
@@ -866,6 +872,7 @@ def send_print_order_fulfillment(order, render_results=None) -> bool:
             include_stripe_id=True,
             include_csv_in_attachments_list=True,
             headline=f"New print order #{order.id}",
+            subtitle=f"{order.quantity} × {order.content_type} · {attendee_count} attendees · {total}",
         )
 
         resend.Emails.send({
@@ -913,19 +920,22 @@ def send_customer_receipt(order) -> bool:
             logger.warning("Order %s has no shipping_email — skipping customer receipt", order.id)
             return False
 
+        attendee_count = len(order.attendees_json or [])
+        total = _money_str(order.total_amount_cents, order.currency)
         html = _build_print_order_email_html(
             order,
             render_results=None,
             include_print_files=False,
             include_stripe_id=False,
             include_csv_in_attachments_list=False,
-            headline=f"Your PlaceCard order #{order.id}",
+            headline="Your PlaceCard Order is a go!",
+            subtitle=f"Order #{order.id} · {order.quantity} × {order.content_type} · {attendee_count} attendees · {total}",
         )
 
         resend.Emails.send({
             "from": f"PlaceCard <{settings.resend_from_email}>",
             "to": [recipient],
-            "subject": f"Your PlaceCard order #{order.id} — thanks!",
+            "subject": "Your PlaceCard Order is a go!",
             "html": html,
             "attachments": _print_order_attachments(order, include_csv=False),
         })

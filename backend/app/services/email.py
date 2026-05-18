@@ -945,3 +945,84 @@ def send_customer_receipt(order) -> bool:
     except Exception:
         logger.exception("Failed to send customer receipt for order %s", order.id)
         return False
+
+
+def send_workspace_invite(
+    *,
+    to_email: str,
+    inviter_name: str,
+    workspace_name: str,
+    role: str,
+    existing_user: bool,
+) -> bool:
+    """Send the "you've been invited to a PlaceCard workspace" email.
+
+    Two CTA variants:
+      - existing_user=True : "Log in to accept" — they already have a
+        PlaceCard account; their pending invite shows up in-app.
+      - existing_user=False: "Sign up to claim your invite" — Supabase
+        Auth sends a separate magic-link signup email (handled in
+        services/supabase_admin.send_signup_invite); this email is the
+        branded version explaining what they're being invited to.
+    """
+    try:
+        import resend
+
+        resend.api_key = settings.resend_api_key
+        if not resend.api_key:
+            logger.warning("Resend API key not configured — skipping workspace invite")
+            return False
+
+        cta_label = "Log in to accept" if existing_user else "Create your account to accept"
+        cta_path = "/" if existing_user else "/signup"
+        cta_url = f"{settings.frontend_url.rstrip('/')}{cta_path}"
+        role_label = role.capitalize()
+
+        body_intro = (
+            f"<strong>{inviter_name}</strong> invited you to collaborate on their "
+            f"PlaceCard workspace as a <strong>{role_label}</strong>."
+        )
+        body_existing = (
+            "Log in to your existing PlaceCard account — the invite will "
+            "be waiting for you in your account menu."
+            if existing_user else
+            "We've also sent a separate signup link from Supabase to "
+            "create your account. Click either link to get started."
+        )
+
+        html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>You've been invited to a PlaceCard workspace</title></head>
+<body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fa;padding:32px 0;">
+    <tr><td align="center">
+      <table width="540" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:36px;">
+        <tr><td>
+          <h1 style="margin:0 0 16px;font-size:22px;color:#0f172a;">You're invited to a PlaceCard workspace</h1>
+          <p style="margin:0 0 16px;font-size:15px;color:#1e293b;line-height:1.55;">{body_intro}</p>
+          <p style="margin:0 0 24px;font-size:14px;color:#475569;line-height:1.55;">{body_existing}</p>
+          <table cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+            <tr><td>
+              <a href="{cta_url}" style="display:inline-block;background:#1b4fff;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;font-size:15px;">{cta_label} →</a>
+            </td></tr>
+          </table>
+          <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.5;">If you weren't expecting this invite, you can ignore this email — nothing happens unless you accept.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+        resend.Emails.send({
+            "from": f"PlaceCard <{settings.resend_from_email}>",
+            "to": [to_email],
+            "subject": f"{inviter_name} invited you to a PlaceCard workspace",
+            "html": html,
+        })
+        logger.info("Workspace invite email sent to %s", to_email)
+        return True
+    except Exception:
+        logger.exception("Failed to send workspace invite to %s", to_email)
+        return False

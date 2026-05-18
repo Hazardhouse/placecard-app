@@ -1,13 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-import httpx
-from ..auth import get_current_user
-from ..config import settings
+"""
+Legacy user-invite endpoint.
 
-# Router-level auth dep — the invite endpoint forwards a Supabase
-# service-role-key-authenticated request, so we cannot leave it
-# accessible to anonymous callers (would let any visitor spam invites
-# into your Supabase project).
+Kept as a thin shim that forwards to the workspace invite endpoint so
+older frontend builds (or any external callers) don't break mid-rollout.
+The real invite logic lives in app.routers.workspaces.invite_to_workspace.
+
+Once the frontend is fully migrated to /api/workspaces/me/invites,
+this whole file can go.
+"""
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.auth import CurrentUser, get_current_user
+from app.database import get_db
+from app.routers.workspaces import invite_to_workspace
+from app.schemas.workspace import InviteRequest, InviteResponse
+
 router = APIRouter(
     prefix="/api/users",
     tags=["users"],
@@ -15,32 +23,11 @@ router = APIRouter(
 )
 
 
-class InviteRequest(BaseModel):
-    email: str
-    role: str = "Viewer"  # Admin, Editor, Viewer
-
-
-@router.post("/invite")
-async def invite_user(req: InviteRequest):
-    if not settings.supabase_url or not settings.supabase_service_key:
-        raise HTTPException(status_code=500, detail="Supabase not configured")
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"{settings.supabase_url}/auth/v1/invite",
-            headers={
-                "apikey": settings.supabase_service_key,
-                "Authorization": f"Bearer {settings.supabase_service_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "email": req.email,
-                "data": {"role": req.role},
-            },
-        )
-
-    if resp.status_code >= 400:
-        detail = resp.json().get("msg", resp.text)
-        raise HTTPException(status_code=resp.status_code, detail=detail)
-
-    return {"success": True, "email": req.email, "role": req.role}
+@router.post("/invite", response_model=InviteResponse)
+async def invite_user(
+    payload: InviteRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Backward-compat alias for POST /api/workspaces/me/invites."""
+    return invite_to_workspace(payload, user, db)

@@ -4,7 +4,13 @@ import logoSvg from "../assets/placecard-logo.svg";
 
 export default function LoginPage() {
   const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  // Default to "signup" when the marketing site (or any direct link)
+  // sends a new user to /signup; default to "login" otherwise.
+  const initialMode: "login" | "signup" =
+    typeof window !== "undefined" && window.location.pathname === "/signup"
+      ? "signup"
+      : "login";
+  const [mode, setMode] = useState<"login" | "signup">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");

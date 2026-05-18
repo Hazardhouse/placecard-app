@@ -57,14 +57,12 @@ PRINT_PRICING: Dict[str, Dict[str, Dict[int, CardPrice]]] = {
         },
     },
     "GB": {
-        "tented-name-cards": {
-            # PLACEHOLDER — Dani is using the same USD numbers in GBP
-            # until her UK printer's rates are finalised. Will diverge.
-            25: CardPrice(base=65.52, rush=60.00, currency="GBP"),
-            50: CardPrice(base=78.32, rush=60.00, currency="GBP"),
-            75: CardPrice(base=86.32, rush=70.00, currency="GBP"),
-            100: CardPrice(base=143.92, rush=279.92, currency="GBP"),
-        },
+        # tented-name-cards in GB is intentionally NOT listed here.
+        # Until Dani's UK printer pricing is finalised, GB tented uses
+        # the US prices × today's USD→GBP rate (via
+        # app.services.fx.usd_to_gbp_rate). quote_card_base() dispatches
+        # to that path when (country, content_type) == ("GB", "tented…").
+        # Other GB content types below have their own independent £ prices.
         "name-cards": {
             50: CardPrice(base=39.95, rush=55.00, currency="GBP"),
             100: CardPrice(base=54.95, rush=55.00, currency="GBP"),
@@ -162,18 +160,34 @@ def quote_card_base(
 
     Raises KeyError if country / content_type isn't in the price list.
     Raises ValueError if quantity exceeds the largest tier (see _nearest_tier).
+
+    Special case: GB tented-name-cards aren't in PRINT_PRICING["GB"] —
+    they're derived from US prices × today's USD→GBP rate until Dani's
+    UK printer pricing is finalised.
     """
     if country not in PRINT_PRICING:
         raise KeyError(f"No pricing configured for country {country!r}")
-    if content_type not in PRINT_PRICING[country]:
-        raise KeyError(f"No pricing for {content_type!r} in {country!r}")
 
-    tier_qty, price = _nearest_tier(country, content_type, quantity)
-    base = price.base
+    if country == "GB" and content_type == "tented-name-cards":
+        # Look up the US tier + price, convert to GBP at today's ECB rate.
+        from app.services.fx import usd_to_gbp_rate
+        tier_qty, us_price = _nearest_tier("US", content_type, quantity)
+        rate = usd_to_gbp_rate()
+        base = us_price.base * rate
+        rush = us_price.rush * rate
+        currency = "GBP"
+    else:
+        if content_type not in PRINT_PRICING[country]:
+            raise KeyError(f"No pricing for {content_type!r} in {country!r}")
+        tier_qty, price = _nearest_tier(country, content_type, quantity)
+        base = price.base
+        rush = price.rush
+        currency = price.currency
+
     base *= PAPER_STOCK_MULTIPLIERS.get(paper_stock, 1.00)
     base *= FINISH_MULTIPLIERS.get(finish, 1.00)
     base *= COLOR_SPEC_MULTIPLIERS.get(color_spec, 1.00)
-    return tier_qty, round(base, 2), price.rush, price.currency
+    return tier_qty, round(base, 2), round(rush, 2), currency
 
 
 def addon_price(name: str, country: str) -> float:

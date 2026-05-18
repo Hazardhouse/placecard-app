@@ -820,12 +820,12 @@ export default function EventDetail() {
         <button
           className={`tab ${activeTab === "collateral" ? "active" : ""}`}
           onClick={() => setActiveTab("collateral")}
-          aria-label="Make Magic"
+          aria-label="Create PlaceCards"
         >
           <svg className="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2l2.5 6.5L21 11l-6.5 2.5L12 20l-2.5-6.5L3 11l6.5-2.5L12 2z" />
           </svg>
-          <span className="tab-label">Make Magic</span>
+          <span className="tab-label">Create PlaceCards</span>
         </button>
       </div>
 

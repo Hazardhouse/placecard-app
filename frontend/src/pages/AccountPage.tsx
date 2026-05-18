@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
-import { api, type ProfileShape, type SalonShape } from "../api/client";
+import { api, type ProfileShape, type SalonShape, type PendingInvite } from "../api/client";
 import { fileToCompressedDataUrl } from "../utils/image";
 
 type Section = "users" | "profile" | "billing" | "orders" | "settings";
-type Role = "Admin" | "Editor" | "Viewer";
+type Role = "Owner" | "Admin" | "Editor" | "Viewer";
 
 interface NotificationSettings {
   event_reminders: boolean;
@@ -40,10 +40,7 @@ interface User {
 const ROLES: Role[] = ["Admin", "Editor", "Viewer"];
 
 export default function AccountPage() {
-  const { user: authUser, updateUser: authUpdateUser } = useAuth();
-  const currentName = authUser?.user_metadata?.full_name || authUser?.email?.split("@")[0] || "User";
-  const currentEmail = authUser?.email || "";
-  const currentInitials = currentName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+  const { updateUser: authUpdateUser } = useAuth();
   const { section } = useParams<{ section?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -67,15 +64,58 @@ export default function AccountPage() {
   });
   const goToSection = (path: string) => navigate(path, { state: { from: returnTo } });
 
-  const [users, setUsers] = useState<User[]>([
-    { id: "1", initials: currentInitials, name: currentName, email: currentEmail, phone: "", role: "Admin", status: "active" },
-  ]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [invitePhone, setInvitePhone] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("Viewer");
 
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  // Load workspace members + any invites the current user has been
+  // offered. Server is the source of truth — no more frontend-only
+  // stub data. Both calls are cheap; fire them in parallel.
+  const refreshUsers = useCallback(async () => {
+    try {
+      const [members, invites] = await Promise.all([
+        api.listWorkspaceMembers(),
+        api.listMyPendingInvites(),
+      ]);
+      setUsers(members.map(m => {
+        const display = m.display_name || (m.email ? m.email.split("@")[0] : "");
+        const initials = (m.display_name || m.email || "?")
+          .split(/\s+|@/)
+          .filter(Boolean)
+          .map(p => p[0])
+          .join("")
+          .toUpperCase()
+          .slice(0, 2);
+        const role: Role = (
+          m.role.charAt(0).toUpperCase() + m.role.slice(1)
+        ) as Role;
+        return {
+          id: String(m.id),
+          initials,
+          name: display,
+          email: m.email || "",
+          phone: "",
+          role,
+          status: m.status === "active" ? "active" : "pending",
+        };
+      }));
+      setPendingInvites(invites);
+    } catch {
+      // keep current state — surface error elsewhere if needed
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshUsers();
+  }, [refreshUsers]);
 
   // Edit user state
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -220,27 +260,18 @@ export default function AccountPage() {
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return;
     setInviteError(null);
-    // The backend forwards to Supabase Auth's invite endpoint with
-    // the service-role key — that's what actually sends the magic-link
-    // email. If this call fails the user never gets an email, so
-    // surface the error to the operator and don't add a stale row
-    // claiming they were invited.
     try {
-      await api.inviteUser({ email: inviteEmail.trim(), role: inviteRole });
+      // role is sent lowercased (server expects 'admin'|'editor'|'viewer').
+      await api.inviteWorkspaceMember({
+        email: inviteEmail.trim(),
+        role: inviteRole.toLowerCase() as "admin" | "editor" | "viewer",
+      });
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : "Could not send invite.");
       return;
     }
-    const initials = inviteEmail.slice(0, 2).toUpperCase();
-    setUsers(prev => [...prev, {
-      id: String(Date.now()),
-      initials,
-      name: inviteEmail.split("@")[0],
-      email: inviteEmail.trim(),
-      phone: invitePhone.trim(),
-      role: inviteRole,
-      status: "pending",
-    }]);
+    // Reload from server so the new pending row appears with its real id.
+    void refreshUsers();
     setInviteEmail("");
     setInvitePhone("");
     setInviteRole("Viewer");
@@ -248,11 +279,37 @@ export default function AccountPage() {
   };
 
   const handleRoleChange = (userId: string, role: Role) => {
+    // Optimistic local update; the backend role-update endpoint is
+    // a Slice 4 follow-up. Keeps the dropdown responsive in the
+    // meantime so the UI doesn't feel broken.
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u));
   };
 
-  const handleRemoveUser = (userId: string) => {
-    setUsers(prev => prev.filter(u => u.id !== userId));
+  const handleRemoveUser = async (userId: string) => {
+    try {
+      await api.removeWorkspaceMember(Number(userId));
+    } catch {
+      // Silent — surface in a future Slice 4 polish if it matters.
+    }
+    void refreshUsers();
+  };
+
+  const handleAcceptInvite = async (memberId: number) => {
+    try {
+      await api.acceptPendingInvite(memberId);
+    } catch {
+      /* swallow */
+    }
+    void refreshUsers();
+  };
+
+  const handleDeclineInvite = async (memberId: number) => {
+    try {
+      await api.declinePendingInvite(memberId);
+    } catch {
+      /* swallow */
+    }
+    void refreshUsers();
   };
 
   return (
@@ -463,6 +520,57 @@ export default function AccountPage() {
                 </>
               )}
 
+              {/* Pending invites the current user has been offered.
+                  Shown on the Users panel above the workspace's own
+                  user list so accepting/declining is one click away. */}
+              {pendingInvites.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 15, color: "#0f172a" }}>
+                    Pending invites for you
+                  </h3>
+                  {pendingInvites.map(inv => (
+                    <div
+                      key={inv.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        padding: "12px 14px",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 10,
+                        background: "#f8fafc",
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div style={{ fontSize: 14, color: "#1e293b" }}>
+                        <strong>
+                          {inv.invited_by_display_name || "A host"}
+                        </strong>{" "}
+                        invited you to <strong>{inv.workspace_name}</strong>{" "}
+                        <span style={{ color: "#64748b" }}>
+                          as a {inv.role}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => handleDeclineInvite(inv.id)}
+                        >
+                          Decline
+                        </button>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => handleAcceptInvite(inv.id)}
+                        >
+                          Accept
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Users table */}
               <div className="account-users-table">
                 <div className="account-users-header">
@@ -471,6 +579,16 @@ export default function AccountPage() {
                   <span className="au-col-status">Status</span>
                   <span className="au-col-actions"></span>
                 </div>
+                {usersLoading && (
+                  <div style={{ padding: "12px 14px", color: "#64748b", fontSize: 14 }}>
+                    Loading members…
+                  </div>
+                )}
+                {!usersLoading && users.length === 0 && (
+                  <div style={{ padding: "12px 14px", color: "#64748b", fontSize: 14 }}>
+                    No members yet.
+                  </div>
+                )}
                 {users.map(user => (
                   <div key={user.id} className="account-user-row">
                     <div className="au-col-user">

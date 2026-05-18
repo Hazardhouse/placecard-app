@@ -19,6 +19,29 @@ export interface ProfileShape {
   created_at: string;
 }
 
+export interface WorkspaceMember {
+  id: number;
+  workspace_id: number;
+  user_id: string | null;
+  email: string | null;
+  display_name: string | null;
+  role: "owner" | "admin" | "editor" | "viewer";
+  status: "pending" | "active" | "declined" | "removed";
+  created_at: string;
+  accepted_at: string | null;
+  invited_by_user_id: string | null;
+}
+
+export interface PendingInvite {
+  id: number;
+  workspace_id: number;
+  workspace_name: string;
+  role: "owner" | "admin" | "editor" | "viewer";
+  invited_by_email: string | null;
+  invited_by_display_name: string | null;
+  created_at: string;
+}
+
 export interface SalonShape {
   id: number;
   host_user_id: string;
@@ -353,12 +376,33 @@ export const api = {
       source_url: string;
     }>("/brand/extract-colors", { method: "POST", body: JSON.stringify({ url }) }),
 
-  // Sends a Supabase Auth invite email (magic link) to the given
-  // address. Backend forwards to Supabase via the service-role key.
-  inviteUser: (data: { email: string; role: "Admin" | "Editor" | "Viewer" }) =>
-    request<{ success: boolean; email: string; role: string }>(
-      "/users/invite",
+  // ── Workspace collaboration ─────────────────────────────────────
+
+  listWorkspaceMembers: () =>
+    request<WorkspaceMember[]>("/workspaces/me/members"),
+
+  inviteWorkspaceMember: (data: { email: string; role: "admin" | "editor" | "viewer" }) =>
+    request<{ member: WorkspaceMember; existing_user: boolean }>(
+      "/workspaces/me/invites",
       { method: "POST", body: JSON.stringify(data) },
+    ),
+
+  removeWorkspaceMember: (memberId: number) =>
+    request<void>(`/workspaces/me/members/${memberId}`, { method: "DELETE" }),
+
+  listMyPendingInvites: () =>
+    request<PendingInvite[]>("/workspaces/me/pending-invites"),
+
+  acceptPendingInvite: (memberId: number) =>
+    request<WorkspaceMember>(
+      `/workspaces/pending-invites/${memberId}/accept`,
+      { method: "POST" },
+    ),
+
+  declinePendingInvite: (memberId: number) =>
+    request<void>(
+      `/workspaces/pending-invites/${memberId}/decline`,
+      { method: "POST" },
     ),
 
   generateNameCards: (data: {

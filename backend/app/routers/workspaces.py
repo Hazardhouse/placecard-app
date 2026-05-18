@@ -135,6 +135,10 @@ def invite_to_workspace(
 
     # Look up the invitee in Supabase. None = email has no PlaceCard account.
     invitee_user_id = find_user_id_by_email(email)
+    logger.info(
+        "Invite to workspace %s by %s: email=%s, existing_user=%s",
+        ws.id, user.id, email, invitee_user_id is not None,
+    )
 
     # Can't invite yourself.
     if invitee_user_id == user.id:

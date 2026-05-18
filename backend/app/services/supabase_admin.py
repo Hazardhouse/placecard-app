@@ -33,31 +33,43 @@ def _headers() -> dict:
 
 def find_user_id_by_email(email: str) -> Optional[str]:
     """Return the Supabase auth UUID for the user with this email, or
-    None if no such user exists. Uses the admin /auth/v1/admin/users
-    endpoint with an email filter.
+    None if no such user exists.
+
+    Implementation: Supabase's admin/users endpoint does NOT actually
+    filter by the `email` query param (it's silently ignored in current
+    GoTrue). We list users page-by-page and match client-side. Cap at
+    50 pages × 1000 per page (50k users) — well beyond any plausible
+    workspace size and far cheaper than firing a wrong-path invite.
     """
     if not settings.supabase_url:
         raise RuntimeError("SUPABASE_URL is not configured")
     url = f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users"
+    target = email.strip().lower()
     try:
         with httpx.Client(timeout=10) as client:
-            resp = client.get(url, headers=_headers(), params={"email": email})
-        if resp.status_code != 200:
-            logger.warning(
-                "admin/users lookup for %r returned %d: %s",
-                email, resp.status_code, resp.text[:200],
-            )
-            return None
-        data = resp.json()
-        users = data.get("users") if isinstance(data, dict) else None
-        if not users:
-            return None
-        # Email match is case-insensitive in Supabase; return the first
-        # exact-match user_id.
-        target = email.strip().lower()
-        for u in users:
-            if (u.get("email") or "").strip().lower() == target:
-                return u.get("id")
+            for page in range(1, 51):
+                resp = client.get(
+                    url,
+                    headers=_headers(),
+                    params={"page": page, "per_page": 1000},
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "admin/users page %d returned %d: %s",
+                        page, resp.status_code, resp.text[:200],
+                    )
+                    return None
+                data = resp.json()
+                users = data.get("users") if isinstance(data, dict) else None
+                if not users:
+                    return None
+                for u in users:
+                    if (u.get("email") or "").strip().lower() == target:
+                        return u.get("id")
+                # Short page = no more results.
+                if len(users) < 1000:
+                    return None
+        logger.warning("admin/users lookup for %r exceeded page cap", email)
         return None
     except Exception:
         logger.exception("Supabase admin lookup failed for %r", email)

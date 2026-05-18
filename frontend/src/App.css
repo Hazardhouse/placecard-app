@@ -2315,10 +2315,12 @@ select:focus {
   padding: 40px 20px;
   /* Soft frosted-glass effect: dims the chart enough to read as
      "disabled" without hiding it. Falls back to a flat translucent
-     wash on browsers that don't support backdrop-filter. */
-  background: rgba(248, 250, 252, 0.72);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
+     wash on browsers that don't support backdrop-filter. Kept light
+     so the underlying chart stays clearly visible — the CTA card's
+     own shadow does the visual elevation. */
+  background: rgba(248, 250, 252, 0.4);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
   /* Animate in so the gating doesn't feel abrupt when a user lands on
      the tab from elsewhere. */
   animation: seating-empty-state-fade 180ms ease-out;

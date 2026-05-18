@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentUser, get_current_user
@@ -263,6 +264,34 @@ def update_member_role(
 # ── Pending invites (notifications for the invitee) ──────────────────
 
 
+def _pending_invite_match_filter(user: CurrentUser):
+    """Build the filter expression that matches "this is a pending invite
+    for the caller."
+
+    Two ways a row can belong to the caller:
+      1. `user_id` was set at invite time (existing-PlaceCard-account
+         branch) and equals the JWT subject.
+      2. `user_id` is still NULL (signup-invite branch, where the
+         account didn't exist at invite time and may have been auto-
+         created via Supabase's /auth/v1/invite) but the `invited_email`
+         column matches the caller's authenticated email.
+
+    Without (2), brand-new invitees who land via the magic-link signup
+    flow can never see their own pending invites — their auth user_id
+    differs from the NULL on the row. They'd be invisible to
+    list/accept/decline and the owner's view would stay stuck on
+    "Pending" forever. Matching by invited_email closes that gap.
+    """
+    caller_email = (user.email or "").strip().lower()
+    return or_(
+        WorkspaceMember.user_id == user.id,
+        and_(
+            WorkspaceMember.user_id.is_(None),
+            func.lower(WorkspaceMember.invited_email) == caller_email,
+        ),
+    )
+
+
 @router.get("/me/pending-invites", response_model=List[PendingInviteResponse])
 def list_my_pending_invites(
     user: CurrentUser = Depends(get_current_user),
@@ -274,7 +303,7 @@ def list_my_pending_invites(
         db.query(WorkspaceMember, Workspace)
         .join(Workspace, Workspace.id == WorkspaceMember.workspace_id)
         .filter(
-            WorkspaceMember.user_id == user.id,
+            _pending_invite_match_filter(user),
             WorkspaceMember.status == "pending",
         )
         .order_by(WorkspaceMember.created_at.desc())
@@ -301,6 +330,18 @@ def list_my_pending_invites(
     return out
 
 
+def _invite_belongs_to_caller(member: WorkspaceMember, user: CurrentUser) -> bool:
+    """Mirror of `_pending_invite_match_filter` but in Python, used by
+    accept/decline after we've already loaded the row by id. Keeps the
+    two checks in lockstep."""
+    if member.user_id == user.id:
+        return True
+    if member.user_id is None and member.invited_email:
+        return (member.invited_email.strip().lower()
+                == (user.email or "").strip().lower())
+    return False
+
+
 @router.post("/pending-invites/{member_id}/accept", response_model=WorkspaceMemberResponse)
 def accept_pending_invite(
     member_id: int,
@@ -314,9 +355,14 @@ def accept_pending_invite(
         .filter(WorkspaceMember.id == member_id)
         .first()
     )
-    if not member or member.user_id != user.id or member.status != "pending":
-        # 404 on every non-match — don't leak existence to non-invitees.
+    # 404 on every non-match — don't leak existence to non-invitees.
+    if not member or member.status != "pending" or not _invite_belongs_to_caller(member, user):
         raise HTTPException(status_code=404, detail="Invite not found")
+    # Lock the binding: any future call (list/decline/owner's-view) will
+    # match by user_id directly without needing the invited_email
+    # fallback. Also covers the "user_id was NULL because the account
+    # didn't exist at invite time" path — first accept resolves it.
+    member.user_id = user.id
     member.status = "active"
     member.accepted_at = datetime.utcnow()
     db.commit()
@@ -337,7 +383,11 @@ def decline_pending_invite(
         .filter(WorkspaceMember.id == member_id)
         .first()
     )
-    if not member or member.user_id != user.id or member.status != "pending":
+    if not member or member.status != "pending" or not _invite_belongs_to_caller(member, user):
         raise HTTPException(status_code=404, detail="Invite not found")
+    # Lock the user_id on decline too so the row's history is unambiguous
+    # — "this specific user declined" rather than "someone with this
+    # email at some point declined."
+    member.user_id = user.id
     member.status = "declined"
     db.commit()

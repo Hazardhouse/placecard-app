@@ -309,21 +309,34 @@ export default function AccountPage() {
     void refreshUsers();
   };
 
+  // Surfaced to the user via inviteError next to the action buttons.
+  // Previously these handlers swallowed errors silently, which masked
+  // the real bug Dani hit on 2026-05-18: accept 404'd because the
+  // membership row's user_id was NULL while the strict check required
+  // user_id == caller. Owner kept seeing "Pending" forever with no
+  // feedback in the UI. Backend now does the looser match — but if
+  // anything else regresses, this surface tells us immediately.
   const handleAcceptInvite = async (memberId: number) => {
+    setInviteError(null);
     try {
       await api.acceptPendingInvite(memberId);
-    } catch {
-      /* swallow */
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to accept invite.";
+      setInviteError(msg);
+      console.error("Accept invite failed", err);
     }
     void refreshUsers();
     void refreshGlobalPendingInvites();
   };
 
   const handleDeclineInvite = async (memberId: number) => {
+    setInviteError(null);
     try {
       await api.declinePendingInvite(memberId);
-    } catch {
-      /* swallow */
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to decline invite.";
+      setInviteError(msg);
+      console.error("Decline invite failed", err);
     }
     void refreshUsers();
     void refreshGlobalPendingInvites();
@@ -585,6 +598,11 @@ export default function AccountPage() {
                       </div>
                     </div>
                   ))}
+                  {inviteError && (
+                    <p style={{ color: "#dc2626", fontSize: 13, margin: "4px 0 0" }}>
+                      {inviteError}
+                    </p>
+                  )}
                 </div>
               )}
 

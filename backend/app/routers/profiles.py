@@ -45,6 +45,7 @@ from app.schemas.profile import (
 )
 from app.services import handles
 from app.services.supabase_storage import ensure_bucket, upload_object
+from app.services.workspace_access import personal_workspace_name
 
 logger = logging.getLogger("profiles")
 
@@ -102,7 +103,11 @@ def _ensure_personal_workspace(db: Session, user: CurrentUser) -> Workspace:
     ws = db.query(Workspace).filter(Workspace.slug == slug).first()
     if ws:
         return ws
-    ws = Workspace(slug=slug, name=f"Personal — {user.id[:8]}", plan_tier="personal")
+    ws = Workspace(
+        slug=slug,
+        name=personal_workspace_name(db, user),
+        plan_tier="personal",
+    )
     db.add(ws)
     db.flush()
     return ws

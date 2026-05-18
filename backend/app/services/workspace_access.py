@@ -16,17 +16,29 @@ the original creator and can delete the workspace.
 """
 from __future__ import annotations
 
+import re
 from typing import Iterable, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentUser
+from app.models.profile import Profile
 from app.models.workspace import Workspace
 from app.models.workspace_member import WorkspaceMember
 
 
 ROLE_RANK = {"owner": 3, "admin": 2, "editor": 1, "viewer": 0}
+
+# Matches the "Personal — UUID8" placeholder name set by the original
+# Slice 1 migration + early helper code. Used by ensure_personal_workspace
+# to upgrade existing workspaces to the user-facing "{Name}'s PlaceCard"
+# format once a profile is available.
+_LEGACY_PLACEHOLDER_RE = re.compile(r"^Personal — [0-9a-f]{8}$")
+
+
+def _is_legacy_placeholder_name(name: str) -> bool:
+    return bool(_LEGACY_PLACEHOLDER_RE.match(name or ""))
 
 
 def active_workspace_ids(db: Session, user: CurrentUser) -> List[int]:
@@ -103,6 +115,38 @@ def require_edit_access(event_workspace_id: Optional[int], event_user_id: str, u
         raise HTTPException(status_code=403, detail="You don't have permission to edit this event.")
 
 
+def personal_workspace_name(db: Session, user: CurrentUser) -> str:
+    """Friendly display name for a user's personal workspace.
+
+    Priority:
+      1. "{Profile.display_name}'s PlaceCard" — the canonical form
+         once the user has a profile (true for everyone with an
+         account today, since profiles auto-provision on first load).
+      2. "{email-local}'s PlaceCard" — fallback when the workspace is
+         being created in the same request that auto-provisions the
+         profile (we may run before the profile flush). Mirrors the
+         email-derivation rule in profiles._derive_display_name.
+      3. "Personal — {user_id prefix}" — last-resort fallback used
+         only when we have neither a profile nor an email. Mostly a
+         legacy guard; no live path hits it today.
+
+    The "'s PlaceCard" suffix is the user-facing convention requested
+    by Dani on 2026-05-18 ("update Personal — XXXXXXXX to Dani
+    Bradford's PlaceCard OR the name of a specific salon"). Salons
+    get their own workspace name once Phase II ships salon-level
+    membership.
+    """
+    profile = db.query(Profile).filter(Profile.user_id == user.id).first()
+    if profile and profile.display_name:
+        return f"{profile.display_name}'s PlaceCard"
+    if user.email:
+        local = user.email.split("@")[0]
+        # Strip out anything that isn't a letter so "dani+test" → "Dani".
+        local = re.sub(r"[^A-Za-z\s]", " ", local).strip() or local
+        return f"{local.title()}'s PlaceCard"
+    return f"Personal — {user.id[:8]}"
+
+
 def ensure_personal_workspace(db: Session, user: CurrentUser) -> Workspace:
     """Find-or-create the user's personal workspace AND ensure they're
     an owner member of it. Idempotent — safe to call on every
@@ -115,9 +159,23 @@ def ensure_personal_workspace(db: Session, user: CurrentUser) -> Workspace:
     slug = f"user-{user.id[:8]}"
     ws = db.query(Workspace).filter(Workspace.slug == slug).first()
     if ws is None:
-        ws = Workspace(slug=slug, name=f"Personal — {user.id[:8]}", plan_tier="personal")
+        ws = Workspace(
+            slug=slug,
+            name=personal_workspace_name(db, user),
+            plan_tier="personal",
+        )
         db.add(ws)
         db.flush()
+    elif _is_legacy_placeholder_name(ws.name):
+        # Workspace was created by the original migration (or an early
+        # version of this helper) with the "Personal — UUID8" placeholder.
+        # Upgrade in place once the user has a profile we can borrow a
+        # display_name from. Idempotent: once renamed it won't match
+        # the placeholder pattern, so this is a no-op on subsequent loads.
+        upgraded = personal_workspace_name(db, user)
+        if upgraded != ws.name:
+            ws.name = upgraded
+            db.flush()
     membership = (
         db.query(WorkspaceMember)
         .filter(

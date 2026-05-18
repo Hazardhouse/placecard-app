@@ -36,6 +36,7 @@ from app.schemas.salon import (
     SalonUpdateRequest,
 )
 from app.services import handles as handle_service
+from app.services.workspace_access import personal_workspace_name
 
 logger = logging.getLogger("salons")
 
@@ -116,7 +117,11 @@ def _require_host_workspace(db: Session, user: CurrentUser) -> int:
     ws = db.query(Workspace).filter(Workspace.slug == slug).first()
     if ws:
         return ws.id
-    ws = Workspace(slug=slug, name=f"Personal — {user.id[:8]}", plan_tier="personal")
+    ws = Workspace(
+        slug=slug,
+        name=personal_workspace_name(db, user),
+        plan_tier="personal",
+    )
     db.add(ws)
     db.flush()
     return ws.id

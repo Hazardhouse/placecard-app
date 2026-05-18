@@ -128,8 +128,10 @@ def send_invitations(
     form_url = f"{settings.frontend_url}/forms/{form.share_token}"
     event_date = event.start_date.strftime("%B %d, %Y") if event.start_date else None
 
-    # Get organizer info from the request context (simplified — uses event name for now)
-    organizer_name = "Your Event Organizer"
+    # Pull the host's profile name (subject + body of the invite email).
+    # Falls back to "Your Event Organizer" when no profile exists.
+    from app.services.event_helpers import resolve_organizer_name
+    organizer_name = resolve_organizer_name(db, event)
     organizer_email = ""
 
     results = []
@@ -275,13 +277,14 @@ def submit_form(share_token: str, data: FormSubmissionCreate, db: Session = Depe
     if data.email:
         try:
             from app.services.email import send_form_confirmation
+            from app.services.event_helpers import resolve_organizer_name
             event = db.query(Event).filter(Event.id == form.event_id).first()
             if event:
                 send_form_confirmation(
                     to_email=data.email,
                     guest_name=data.name or "",
                     event_name=event.name,
-                    organizer_name="Your Event Organizer",
+                    organizer_name=resolve_organizer_name(db, event),
                     public_token=event.public_token,
                     event_start=event.start_date,
                     event_end=event.end_date,

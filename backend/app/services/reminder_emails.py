@@ -28,6 +28,7 @@ from app.services.email import (
     send_event_reminder_day_before,
     send_event_reminder_week,
 )
+from app.services.event_helpers import resolve_organizer_name
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,10 @@ def _send_for_event(db: Session, event: Event, kind: str) -> int:
         .all()
     )
 
+    # Resolve once per event — cheap query, but no need to re-run it
+    # for every attendee in the loop.
+    organizer_name = resolve_organizer_name(db, event)
+
     for a in attendees:
         if _already_sent(db, event.id, a.id, kind):
             continue
@@ -73,7 +78,7 @@ def _send_for_event(db: Session, event: Event, kind: str) -> int:
                 attendee_id=a.id,
                 guest_name=a.name or "",
                 event_name=event.name,
-                organizer_name="Your Event Organizer",
+                organizer_name=organizer_name,
                 public_token=event.public_token,
                 event_start=event.start_date,
                 event_end=event.end_date,
@@ -88,7 +93,7 @@ def _send_for_event(db: Session, event: Event, kind: str) -> int:
                 attendee_id=a.id,
                 guest_name=a.name or "",
                 event_name=event.name,
-                organizer_name="Your Event Organizer",
+                organizer_name=organizer_name,
                 public_token=event.public_token,
                 event_start=event.start_date,
                 event_end=event.end_date,

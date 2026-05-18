@@ -96,13 +96,23 @@ def _compute_pricing(
         # printer-friendly message from pricing.py rather than a 500.
         raise HTTPException(status_code=400, detail=str(exc))
 
-    rush_amount = rush_surcharge if rush else 0.0
-    remove_branding_amount = (
-        pricing.addon_price("remove_branding", country) if remove_branding else 0.0
-    )
+    # rush_amount + remove_branding_amount are ALWAYS the surcharge
+    # for the current tier — the options-step UI needs to display the
+    # addon prices next to each checkbox regardless of whether they're
+    # currently selected. The `total_amount` still respects the actual
+    # flags so the server stays authoritative on what would be billed.
+    # The create_intent caller zeroes these out for billing when the
+    # corresponding flag is False (see comment there).
+    rush_amount = rush_surcharge
+    remove_branding_amount = pricing.addon_price("remove_branding", country)
     shipping_amount, _ = pricing.shipping_price(country)
 
-    total = base + rush_amount + remove_branding_amount + shipping_amount
+    total = (
+        base
+        + (rush_amount if rush else 0.0)
+        + (remove_branding_amount if remove_branding else 0.0)
+        + shipping_amount
+    )
 
     return {
         "country": country,
@@ -168,8 +178,12 @@ def create_intent(
 
     # Convert to integer minor units (cents / pence) for Stripe.
     base_cents = round(breakdown["base_amount"] * 100)
-    rush_cents = round(breakdown["rush_amount"] * 100)
-    branding_cents = round(breakdown["remove_branding_amount"] * 100)
+    # `breakdown["rush_amount"]` is now always the surcharge for display.
+    # Apply it to the actual order total / stored fields only when the
+    # rush flag is on; same for branding. Without this, the order would
+    # be charged for addons the customer didn't tick.
+    rush_cents = round(breakdown["rush_amount"] * 100) if data.rush else 0
+    branding_cents = round(breakdown["remove_branding_amount"] * 100) if data.remove_branding else 0
     shipping_cents = round(breakdown["shipping_amount"] * 100)
     total_cents = base_cents + rush_cents + branding_cents + shipping_cents
     currency_iso = breakdown["currency"]

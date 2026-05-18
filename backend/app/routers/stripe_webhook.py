@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.print_order import PrintOrder
+from app.services.email import send_customer_receipt
 from app.services.print_rendering import render_print_files_and_notify
 
 logger = logging.getLogger("stripe_webhook")
@@ -95,6 +96,14 @@ def _handle_payment_succeeded(intent: dict, db: Session, request: Request) -> No
     order.paid_at = datetime.utcnow()
     db.commit()
     order_id = order.id  # capture before the session closes downstream
+
+    # Customer receipt — fire immediately so the buyer gets confirmation
+    # at payment time, not 30+ seconds later when renders finish. Never
+    # blocks fulfillment; failure here just logs.
+    try:
+        send_customer_receipt(order)
+    except Exception:
+        logger.exception("Customer receipt send failed for order %s", order_id)
 
     # Schedule the per-attendee Gemini-rendering job on the
     # APScheduler instance attached to app.state in main.py. The job

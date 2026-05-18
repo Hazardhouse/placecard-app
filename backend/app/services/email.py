@@ -594,12 +594,17 @@ def _extension_for_mime(mime: str | None) -> str:
     return "png"
 
 
-def _print_order_attachments(order) -> list[dict]:
+def _print_order_attachments(order, *, include_csv: bool = True) -> list[dict]:
     """Build the Resend attachments payload for a print order:
-    one entry per design view (Front, Back, etc.) plus an attendees CSV.
+    one entry per design view (Front, Back, etc.) plus optionally an
+    attendees CSV.
 
     `order` is the PrintOrder ORM row; we read the frozen snapshots
     off it so the email reflects exactly what was paid for.
+
+    `include_csv=False` strips the attendee CSV — used for the customer
+    receipt, where exposing attendees would leak the print pipeline
+    (and isn't useful to the buyer).
     """
     import base64
     import csv
@@ -624,21 +629,22 @@ def _print_order_attachments(order) -> list[dict]:
             "content": order.design_image_b64,
         })
 
-    # Attendees CSV — what to actually print on the cards.
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(["Name", "Table", "Dietary"])
-    for a in (order.attendees_json or []):
-        writer.writerow([
-            a.get("name", ""),
-            a.get("table_name", ""),
-            a.get("dietary", "") or "",
-        ])
-    csv_b64 = base64.b64encode(buf.getvalue().encode("utf-8")).decode("ascii")
-    attachments.append({
-        "filename": f"attendees-order-{order.id}.csv",
-        "content": csv_b64,
-    })
+    if include_csv:
+        # Attendees CSV — what to actually print on the cards.
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Name", "Table", "Dietary"])
+        for a in (order.attendees_json or []):
+            writer.writerow([
+                a.get("name", ""),
+                a.get("table_name", ""),
+                a.get("dietary", "") or "",
+            ])
+        csv_b64 = base64.b64encode(buf.getvalue().encode("utf-8")).decode("ascii")
+        attachments.append({
+            "filename": f"attendees-order-{order.id}.csv",
+            "content": csv_b64,
+        })
 
     return attachments
 
@@ -710,69 +716,77 @@ def _render_print_files_section(render_results, *, total_attendees: int | None =
 """
 
 
-def send_print_order_fulfillment(order, render_results=None) -> bool:
-    """Send the operator notification email for a paid print order.
+def _build_print_order_email_html(
+    order,
+    render_results=None,
+    *,
+    include_print_files: bool,
+    include_stripe_id: bool,
+    include_csv_in_attachments_list: bool,
+    headline: str,
+) -> str:
+    """Shared HTML body builder for both the operator fulfillment email
+    and the customer receipt.
 
-    Includes order details inline + the chosen design files + an
-    attendees CSV as attachments — everything you need to build the
-    print-ready file and hand off to the local printer.
-
-    When `render_results` is provided (list of objects with
-    attendee_name / front_url / back_url / error attributes from the
-    background rendering pipeline), the email also includes signed
-    download URLs for each per-attendee print-ready JPG. URLs expire
-    in 24h; re-trigger the job to refresh.
-
-    Returns True on a successful send; False otherwise (logs internally).
-    Caller should never let a False here roll back the order's 'paid'
-    state — the payment has already cleared at Stripe.
+    Flags carve out the differences between the two recipients:
+      - `include_print_files`: per-attendee download links block.
+        Operator only — customers must never see the print pipeline.
+      - `include_stripe_id`: internal PaymentIntent footer line. Operator only.
+      - `include_csv_in_attachments_list`: mention the attendee CSV in
+        the body's attachments list. Operator only (the customer doesn't
+        get a CSV attached).
+      - `headline`: the H1 — "New print order #X" vs "Your PlaceCard order #X".
     """
-    try:
-        import resend
+    total = _money_str(order.total_amount_cents, order.currency)
+    base = _money_str(order.base_amount_cents, order.currency)
+    shipping = _money_str(order.shipping_amount_cents, order.currency)
+    rush_line = (
+        f"<tr><td style='padding:4px 0;'>Rush (next-business-day)</td>"
+        f"<td style='padding:4px 0;text-align:right;'>{_money_str(order.rush_amount_cents, order.currency)}</td></tr>"
+        if order.rush else ""
+    )
+    branding_line = (
+        f"<tr><td style='padding:4px 0;'>Remove PlaceCard branding</td>"
+        f"<td style='padding:4px 0;text-align:right;'>{_money_str(order.remove_branding_amount_cents, order.currency)}</td></tr>"
+        if order.remove_branding else ""
+    )
 
-        resend.api_key = settings.resend_api_key
-        if not resend.api_key:
-            logger.warning("Resend API key not configured — skipping fulfillment email")
-            return False
-        if not settings.fulfillment_email:
-            logger.warning("FULFILLMENT_EMAIL not set — skipping fulfillment email")
-            return False
+    address_lines = [order.shipping_address1]
+    if order.shipping_address2:
+        address_lines.append(order.shipping_address2)
+    address_lines.append(
+        ", ".join([p for p in (order.shipping_city, order.shipping_state, order.shipping_zip) if p])
+    )
+    address_lines.append({"US": "United States", "GB": "United Kingdom"}.get(order.shipping_country, order.shipping_country))
+    address_html = "<br>".join(address_lines)
 
-        total = _money_str(order.total_amount_cents, order.currency)
-        base = _money_str(order.base_amount_cents, order.currency)
-        shipping = _money_str(order.shipping_amount_cents, order.currency)
-        rush_line = (
-            f"<tr><td style='padding:4px 0;'>Rush (next-business-day)</td>"
-            f"<td style='padding:4px 0;text-align:right;'>{_money_str(order.rush_amount_cents, order.currency)}</td></tr>"
-            if order.rush else ""
-        )
-        branding_line = (
-            f"<tr><td style='padding:4px 0;'>Remove PlaceCard branding</td>"
-            f"<td style='padding:4px 0;text-align:right;'>{_money_str(order.remove_branding_amount_cents, order.currency)}</td></tr>"
-            if order.remove_branding else ""
-        )
+    attendee_count = len(order.attendees_json or [])
 
-        address_lines = [order.shipping_address1]
-        if order.shipping_address2:
-            address_lines.append(order.shipping_address2)
-        address_lines.append(
-            ", ".join([p for p in (order.shipping_city, order.shipping_state, order.shipping_zip) if p])
-        )
-        address_lines.append({"US": "United States", "GB": "United Kingdom"}.get(order.shipping_country, order.shipping_country))
-        address_html = "<br>".join(address_lines)
+    print_files_html = (
+        _render_print_files_section(render_results, total_attendees=attendee_count)
+        if include_print_files else ""
+    )
+    stripe_footer_html = (
+        f'<p style="margin:24px 0 0;font-size:12px;color:#94a3b8;">'
+        f'Stripe PaymentIntent: <code style="background:#f1f5f9;padding:1px 6px;border-radius:3px;">'
+        f'{order.stripe_payment_intent_id}</code></p>'
+        if include_stripe_id else ""
+    )
+    csv_attachments_line = (
+        f"<br>• Attendee list CSV ({attendee_count} rows)"
+        if include_csv_in_attachments_list else ""
+    )
 
-        attendee_count = len(order.attendees_json or [])
-
-        html = f"""
+    return f"""
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>New PlaceCard print order</title></head>
+<head><meta charset="utf-8"><title>{headline}</title></head>
 <body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fa;padding:32px 0;">
     <tr><td align="center">
       <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:32px;">
         <tr><td>
-          <h1 style="margin:0 0 6px;font-size:22px;color:#0f172a;">New print order #{order.id}</h1>
+          <h1 style="margin:0 0 6px;font-size:22px;color:#0f172a;">{headline}</h1>
           <p style="margin:0 0 24px;color:#64748b;font-size:14px;">{order.quantity} × {order.content_type} · {attendee_count} attendees · {total}</p>
 
           <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Print specs</h2>
@@ -802,16 +816,13 @@ def send_print_order_fulfillment(order, render_results=None) -> bool:
             <a href="mailto:{order.shipping_email}" style="color:#1b4fff;">{order.shipping_email}</a>
           </p>
 
-          {_render_print_files_section(render_results, total_attendees=attendee_count)}
+          {print_files_html}
 
           <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Attachments</h2>
           <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">
-            • Source design image(s) — front{' + back' if order.design_views_json else ''} (low-res, for visual reference)<br>
-            • Attendee list CSV ({attendee_count} rows)
+            • Source design image(s) — front{' + back' if order.design_views_json else ''} (low-res, for visual reference){csv_attachments_line}
           </p>
-          <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;">
-            Stripe PaymentIntent: <code style="background:#f1f5f9;padding:1px 6px;border-radius:3px;">{order.stripe_payment_intent_id}</code>
-          </p>
+          {stripe_footer_html}
         </td></tr>
       </table>
     </td></tr>
@@ -820,16 +831,107 @@ def send_print_order_fulfillment(order, render_results=None) -> bool:
 </html>
 """
 
+
+def send_print_order_fulfillment(order, render_results=None) -> bool:
+    """Send the OPERATOR notification email for a paid print order.
+
+    Includes order details inline + the chosen design files + an
+    attendees CSV as attachments — everything needed to build the
+    print-ready file and hand off to the local printer.
+
+    When `render_results` is provided (list of objects with
+    attendee_name / front_url / back_url / error attributes from the
+    background rendering pipeline), the email also includes signed
+    download URLs for each sample template render.
+
+    Returns True on a successful send; False otherwise (logs internally).
+    Caller should never let a False here roll back the order's 'paid'
+    state — the payment has already cleared at Stripe.
+    """
+    try:
+        import resend
+
+        resend.api_key = settings.resend_api_key
+        if not resend.api_key:
+            logger.warning("Resend API key not configured — skipping fulfillment email")
+            return False
+        if not settings.fulfillment_email:
+            logger.warning("FULFILLMENT_EMAIL not set — skipping fulfillment email")
+            return False
+
+        html = _build_print_order_email_html(
+            order,
+            render_results,
+            include_print_files=True,
+            include_stripe_id=True,
+            include_csv_in_attachments_list=True,
+            headline=f"New print order #{order.id}",
+        )
+
         resend.Emails.send({
             "from": f"PlaceCard Orders <{settings.resend_from_email}>",
             "to": [settings.fulfillment_email],
             "subject": f"New print order #{order.id} — {order.shipping_name} — {order.quantity} {order.content_type}",
             "html": html,
-            "attachments": _print_order_attachments(order),
+            "attachments": _print_order_attachments(order, include_csv=True),
         })
         logger.info("Print-order fulfillment email sent for order %s", order.id)
         return True
 
     except Exception:
         logger.exception("Failed to send print-order fulfillment email")
+        return False
+
+
+def send_customer_receipt(order) -> bool:
+    """Send the CUSTOMER receipt for a paid print order.
+
+    Same layout as the operator fulfillment email but:
+      - No print-files section (customers must not see the print pipeline)
+      - No attendee CSV attachment
+      - No internal Stripe PaymentIntent footer
+      - Goes to the buyer's email (the one they used at checkout, which
+        pre-fills from their PlaceCard account email)
+      - Subject is buyer-friendly ("Your PlaceCard order #X")
+
+    Fires from the Stripe webhook on payment_intent.succeeded so the
+    customer gets confirmation immediately on payment — no waiting on
+    the render pipeline.
+
+    Returns True on send; False otherwise. Failure never blocks order
+    fulfillment — payment has already cleared.
+    """
+    try:
+        import resend
+
+        resend.api_key = settings.resend_api_key
+        if not resend.api_key:
+            logger.warning("Resend API key not configured — skipping customer receipt")
+            return False
+        recipient = (order.shipping_email or "").strip()
+        if not recipient:
+            logger.warning("Order %s has no shipping_email — skipping customer receipt", order.id)
+            return False
+
+        html = _build_print_order_email_html(
+            order,
+            render_results=None,
+            include_print_files=False,
+            include_stripe_id=False,
+            include_csv_in_attachments_list=False,
+            headline=f"Your PlaceCard order #{order.id}",
+        )
+
+        resend.Emails.send({
+            "from": f"PlaceCard <{settings.resend_from_email}>",
+            "to": [recipient],
+            "subject": f"Your PlaceCard order #{order.id} — thanks!",
+            "html": html,
+            "attachments": _print_order_attachments(order, include_csv=False),
+        })
+        logger.info("Customer receipt sent for order %s to %s", order.id, recipient)
+        return True
+
+    except Exception:
+        logger.exception("Failed to send customer receipt for order %s", order.id)
         return False

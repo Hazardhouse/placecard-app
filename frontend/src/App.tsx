@@ -98,6 +98,10 @@ function ProtectedLayout() {
           <Route path="/account" element={<AccountPage />} />
           <Route path="/account/:section" element={<AccountPage />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
+          {/* Marketing CTAs link unauthenticated visitors to /signup
+              (LoginPage opens in signup mode). Once they're in, that
+              URL is meaningless — bounce them to the dashboard. */}
+          <Route path="/signup" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>

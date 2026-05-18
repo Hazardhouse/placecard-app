@@ -796,7 +796,7 @@ def _build_print_order_email_html(
             <tr><td style="padding:4px 0;">Paper</td><td style="padding:4px 0;text-align:right;">{order.paper_stock}</td></tr>
             <tr><td style="padding:4px 0;">Finish</td><td style="padding:4px 0;text-align:right;">{order.finish}</td></tr>
             <tr><td style="padding:4px 0;">Colour</td><td style="padding:4px 0;text-align:right;">{order.color_spec}</td></tr>
-            <tr><td style="padding:4px 0;">Turnaround</td><td style="padding:4px 0;text-align:right;">{order.turnaround_days} business days{' (RUSH)' if order.rush else ''}</td></tr>
+            <tr><td style="padding:4px 0;">Turnaround</td><td style="padding:4px 0;text-align:right;">{'Next business day' if order.rush else '2&ndash;3 business days'}</td></tr>
             <tr><td style="padding:4px 0;">Branding removed?</td><td style="padding:4px 0;text-align:right;">{'Yes' if order.remove_branding else 'No'}</td></tr>
           </table>
 

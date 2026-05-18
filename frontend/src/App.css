@@ -74,6 +74,49 @@ h1, h2, h3, h4, h5, h6 {
   gap: 16px;
 }
 
+/* Workspace presence avatars — cluster of initials circles rendered to
+   the left of "Hi, {name}" whenever the workspace has more than one
+   active member. Auto-hidden for solo accounts by the component itself
+   (returns null when active count ≤ 1). */
+.header-avatars {
+  display: inline-flex;
+  align-items: center;
+  /* Tighter than .header-right's 16px because the avatars are visually
+     paired with the dropdown; the dropdown's own padding gives air. */
+  margin-right: -4px;
+}
+
+.header-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  /* White ring + slight overlap so two adjacent circles read as a
+     stack rather than a smear. First-child reset on the inset removes
+     the leftmost overlap so the cluster aligns flush. */
+  border: 2px solid #fff;
+  margin-left: -8px;
+  box-sizing: border-box;
+}
+
+.header-avatar:first-child {
+  margin-left: 0;
+}
+
+/* Overflow pill ("+3"). Greyed out so it reads as metadata, not as
+   another person. */
+.header-avatar-overflow {
+  background: #94a3b8;
+  font-size: 10px;
+}
+
 /* ── User Dropdown ── */
 .user-dropdown-wrap {
   position: relative;

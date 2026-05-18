@@ -12,8 +12,74 @@ import ProfilePage from "./pages/ProfilePage";
 import SalonPage from "./pages/SalonPage";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { PendingInvitesProvider, usePendingInvites } from "./contexts/PendingInvitesContext";
+import { WorkspaceMembersProvider, useWorkspaceMembers } from "./contexts/WorkspaceMembersContext";
+import type { WorkspaceMember } from "./api/client";
 import logoSvg from "./assets/placecard-logo.svg";
 import "./App.css";
+
+/**
+ * Two-character initials for a member, with fallbacks across the
+ * shape's nullable fields. Mirrors the logic AccountPage uses for the
+ * Users-panel avatars so the same person reads the same in both places.
+ */
+function memberInitials(m: WorkspaceMember): string {
+  const source = m.display_name || m.email || "?";
+  return source
+    .split(/\s+|@/)
+    .filter(Boolean)
+    .map(part => part[0] ?? "")
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+/**
+ * Friendly tooltip label for an avatar: "Dani Bradford (Owner)" or
+ * "support@lonerucksack.com (Editor)" when no display name exists.
+ */
+function memberTooltip(m: WorkspaceMember): string {
+  const name = m.display_name || m.email || "Member";
+  const role = m.role.charAt(0).toUpperCase() + m.role.slice(1);
+  return `${name} (${role})`;
+}
+
+/**
+ * Cluster of initials circles rendered to the left of "Hi, {name}" in
+ * the app header. Hidden for solo workspaces (one active member = no
+ * collaboration UI needed). Caps the visible stack and folds the
+ * remainder into a "+N" pill, capped so the header doesn't blow out.
+ */
+function MemberAvatars() {
+  const { user } = useAuth();
+  const { members } = useWorkspaceMembers();
+  // Pending / declined / removed rows are bookkeeping — only active
+  // collaborators belong in the presence cluster.
+  const active = members.filter(m => m.status === "active");
+  if (active.length <= 1) return null;
+  // Show the caller first so "DB" anchors the cluster from the left.
+  const sorted = [...active].sort((a, b) => {
+    if (a.user_id === user?.id) return -1;
+    if (b.user_id === user?.id) return 1;
+    return 0;
+  });
+  const MAX_VISIBLE = 4;
+  const visible = sorted.slice(0, MAX_VISIBLE);
+  const overflow = sorted.length - MAX_VISIBLE;
+  return (
+    <div className="header-avatars" aria-label="Workspace members">
+      {visible.map(m => (
+        <span key={m.id} className="header-avatar" title={memberTooltip(m)}>
+          {memberInitials(m)}
+        </span>
+      ))}
+      {overflow > 0 && (
+        <span className="header-avatar header-avatar-overflow" title={`${overflow} more`}>
+          +{overflow}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function UserDropdown() {
   const [open, setOpen] = useState(false);
@@ -110,9 +176,10 @@ function ProtectedLayout() {
       <header className="app-header">
         <Link to="/" className="logo"><img src={logoSvg} alt="PlaceCard" className="logo-img" /></Link>
         <div className="header-right">
-          {/* Multi-user presence avatars will render here once the
-              invite flow persists team members. Hidden for solo
-              accounts (the only mode today). */}
+          {/* Cluster of initials circles for every active member of the
+              caller's workspace. Auto-hides for solo accounts. Stays in
+              sync with AccountPage mutations via WorkspaceMembersContext. */}
+          <MemberAvatars />
           <UserDropdown />
         </div>
       </header>
@@ -187,6 +254,7 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <PendingInvitesProvider>
+         <WorkspaceMembersProvider>
           <Routes>
             <Route path="/forms/:shareToken" element={<PublicForm />} />
             <Route path="/restaurant/:variant/:shareToken" element={<RestaurantView />} />
@@ -200,6 +268,7 @@ function App() {
                 Keeps the `placecard-events.app/@dani` marketing URL. */}
             <Route path="/*" element={<RootDispatcher />} />
           </Routes>
+         </WorkspaceMembersProvider>
         </PendingInvitesProvider>
       </AuthProvider>
     </BrowserRouter>

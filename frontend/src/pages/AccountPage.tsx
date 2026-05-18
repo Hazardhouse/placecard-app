@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { usePendingInvites } from "../contexts/PendingInvitesContext";
+import { useWorkspaceMembers } from "../contexts/WorkspaceMembersContext";
 import { supabase } from "../lib/supabase";
 import { api, type ProfileShape, type SalonShape, type PendingInvite } from "../api/client";
 import { fileToCompressedDataUrl } from "../utils/image";
@@ -46,6 +47,10 @@ export default function AccountPage() {
   // so accept / decline here calls `refresh()` to keep the count in
   // lockstep without having to plumb a prop through.
   const { refresh: refreshGlobalPendingInvites } = usePendingInvites();
+  // The header avatars cluster reads from the same WorkspaceMembersContext.
+  // Every mutation that adds or removes a member (invite / accept / decline
+  // / remove / role-change) calls this so the header updates immediately.
+  const { refresh: refreshGlobalMembers } = useWorkspaceMembers();
   const { section } = useParams<{ section?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -277,6 +282,7 @@ export default function AccountPage() {
     }
     // Reload from server so the new pending row appears with its real id.
     void refreshUsers();
+    void refreshGlobalMembers();
     setInviteEmail("");
     setInvitePhone("");
     setInviteRole("Viewer");
@@ -298,6 +304,7 @@ export default function AccountPage() {
       // Server rejected — pull truth back.
     }
     void refreshUsers();
+    void refreshGlobalMembers();
   };
 
   const handleRemoveUser = async (userId: string) => {
@@ -307,6 +314,7 @@ export default function AccountPage() {
       // Silent — surface in a future Slice 4 polish if it matters.
     }
     void refreshUsers();
+    void refreshGlobalMembers();
   };
 
   // Surfaced to the user via inviteError next to the action buttons.
@@ -327,6 +335,10 @@ export default function AccountPage() {
     }
     void refreshUsers();
     void refreshGlobalPendingInvites();
+    // An accept turns a pending row into an active member, so the
+    // header avatars cluster needs a refresh too — the new collaborator
+    // should appear there immediately.
+    void refreshGlobalMembers();
   };
 
   const handleDeclineInvite = async (memberId: number) => {
@@ -340,6 +352,7 @@ export default function AccountPage() {
     }
     void refreshUsers();
     void refreshGlobalPendingInvites();
+    void refreshGlobalMembers();
   };
 
   return (

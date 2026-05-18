@@ -2292,16 +2292,41 @@ select:focus {
   gap: 8px;
 }
 
-/* Empty-state card rendered when no seating arrangement exists yet
-   (i.e. no schedule item is marked "Requires seating"). Replaces the
-   entire Seating tab content with a single centred CTA that jumps to
-   the Schedule tab. */
-.seating-empty-state {
+/* seating-view is the positioning context for the empty-state overlay.
+   Without `position: relative` here the overlay would anchor to the
+   nearest positioned ancestor (worst case `<body>`) and cover the
+   entire page including the header. */
+.seating-view {
+  position: relative;
+}
+
+/* Empty-state overlay rendered on top of the seating tab when no
+   schedule item is marked "Requires seating" (and therefore no
+   arrangement exists). Dims and blurs the chart underneath so the
+   user sees what they're missing, but `pointer-events: auto` blocks
+   every click underneath until they act on the CTA. */
+.seating-empty-state-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 420px;
   padding: 40px 20px;
+  /* Soft frosted-glass effect: dims the chart enough to read as
+     "disabled" without hiding it. Falls back to a flat translucent
+     wash on browsers that don't support backdrop-filter. */
+  background: rgba(248, 250, 252, 0.72);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  /* Animate in so the gating doesn't feel abrupt when a user lands on
+     the tab from elsewhere. */
+  animation: seating-empty-state-fade 180ms ease-out;
+}
+
+@keyframes seating-empty-state-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .seating-empty-state-card {
@@ -2315,7 +2340,9 @@ select:focus {
   background: #ffffff;
   border: 1px solid var(--border, #e2e8f0);
   border-radius: 14px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  /* Slightly heavier shadow than the standard card — the overlay is
+     visually elevated above the (now dimmed) seating chart. */
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
 }
 
 .seating-empty-state-icon {

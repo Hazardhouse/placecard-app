@@ -1148,7 +1148,11 @@ function OrderDetailModal({ orderId, onClose }: { orderId: number; onClose: () =
                 </div>
                 <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
                   <tbody>
-                    <PriceRow label={`Cards (×${order.quantity_tier})`} cents={order.base_amount_cents} currency={order.currency} />
+                    {/* Used to read "Cards (×25)" using order.quantity_tier
+                        — dropped because it confused customers ordering
+                        fewer cards than the tier (e.g. 2 cards priced at
+                        the 25-card tier read as 25 being bought). */}
+                    <PriceRow label="Cards" cents={order.base_amount_cents} currency={order.currency} />
                     {order.rush && (
                       <PriceRow label="Rush turnaround" cents={order.rush_amount_cents} currency={order.currency} />
                     )}

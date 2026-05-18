@@ -806,7 +806,7 @@ def _build_print_order_email_html(
 
           <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Pricing</h2>
           <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
-            <tr><td style="padding:4px 0;">Cards (×{order.quantity})</td><td style="padding:4px 0;text-align:right;">{base}</td></tr>
+            <tr><td style="padding:4px 0;">Cards</td><td style="padding:4px 0;text-align:right;">{base}</td></tr>
             {rush_line}
             {branding_line}
             <tr><td style="padding:4px 0;">Shipping ({order.shipping_country})</td><td style="padding:4px 0;text-align:right;">{shipping}</td></tr>

@@ -582,7 +582,13 @@ function PaymentStep({
           {breakdown && (
             <>
               <div className="order-price-row">
-                <span>Cards (×{breakdown.quantity_tier})</span>
+                {/* Tier quantity (`breakdown.quantity_tier`) used to be
+                    shown here as "Cards (×25)" but it confused customers
+                    ordering fewer cards than the tier — e.g. 2 cards
+                    priced at the 25-card tier read as if 25 were being
+                    bought. Tier info still surfaces to the operator in
+                    the fulfillment email's Print Specs section. */}
+                <span>Cards</span>
                 <span>{fmt(breakdown.base_amount_cents)}</span>
               </div>
               {rush && breakdown.rush_amount_cents > 0 && (

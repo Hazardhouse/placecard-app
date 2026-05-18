@@ -97,10 +97,15 @@ export default function PrintCheckoutModal({
     rush_amount: number;
     remove_branding_amount: number;
   } | null>(null);
+  // Caps + tier-not-found errors from the quote endpoint. Surfaced
+  // inline on the options step so the user understands why pricing
+  // isn't loading + the Continue button stays disabled until resolved.
+  const [optionsQuoteError, setOptionsQuoteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (step !== "options") return;
     let cancelled = false;
+    setOptionsQuoteError(null);
     api.getPrintQuote({
       country: "GB",
       content_type: contentType,
@@ -118,7 +123,13 @@ export default function PrintCheckoutModal({
           });
         }
       })
-      .catch(() => {
+      .catch((err: Error) => {
+        if (!cancelled) {
+          // Surface caps + tier errors so the user can adjust the
+          // attendee count before they get to the address step.
+          setOptionsQuote(null);
+          setOptionsQuoteError(err.message || "Could not calculate pricing.");
+        }
         // Non-fatal — the options preview just shows blanks if the
         // quote endpoint is unreachable. Real pricing is recomputed
         // server-side on Continue.
@@ -234,6 +245,22 @@ export default function PrintCheckoutModal({
 
           {step === "options" && (
             <div className="order-field">
+              {optionsQuoteError && (
+                <div
+                  style={{
+                    padding: 12,
+                    background: "#fef2f2",
+                    border: "1px solid #fecaca",
+                    color: "#991b1b",
+                    borderRadius: 8,
+                    marginBottom: 12,
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {optionsQuoteError}
+                </div>
+              )}
               <label
                 style={{
                   display: "flex", alignItems: "flex-start", gap: 12, padding: 14,
@@ -439,6 +466,7 @@ export default function PrintCheckoutModal({
               type="button"
               className="btn btn-primary"
               onClick={() => setStep("address")}
+              disabled={!!optionsQuoteError}
             >
               Continue →
             </button>

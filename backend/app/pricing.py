@@ -20,70 +20,74 @@ from typing import Dict, Tuple
 @dataclass(frozen=True)
 class CardPrice:
     base: float
+    rush: float  # rush surcharge for this tier (added when rush=True)
     currency: str  # 'USD' or 'GBP'
 
 
-# Card base prices keyed by country → content_type → quantity tier.
-# Quantity tiers are inclusive ceilings: a quantity of 75 rounds up
-# to the 100 tier and is priced as 100 cards.
+# Card base + rush prices keyed by country → content_type → quantity tier.
+# Quantity tiers are inclusive ceilings: a quantity of 75 rounds up to
+# the 100 tier and is priced as 100 cards. Orders exceeding the largest
+# tier raise ValueError — they need a manual quote, not silent capping.
+#
+# tented-name-cards has tier-dependent rush surcharges per Dani's
+# 2026-05-18 printer-quoted pricing. Other content types use a single
+# flat rush per country (same value at every tier).
 PRINT_PRICING: Dict[str, Dict[str, Dict[int, CardPrice]]] = {
     "US": {
         "tented-name-cards": {
-            50: CardPrice(base=59.95, currency="USD"),
-            100: CardPrice(base=79.95, currency="USD"),
-            250: CardPrice(base=119.95, currency="USD"),
-            500: CardPrice(base=159.95, currency="USD"),
-            1000: CardPrice(base=219.95, currency="USD"),
-            2500: CardPrice(base=349.95, currency="USD"),
-            5000: CardPrice(base=549.95, currency="USD"),
+            # Capped at 100 until pricing for larger orders is finalised.
+            25: CardPrice(base=65.52, rush=60.00, currency="USD"),
+            50: CardPrice(base=78.32, rush=60.00, currency="USD"),
+            75: CardPrice(base=86.32, rush=70.00, currency="USD"),
+            100: CardPrice(base=143.92, rush=279.92, currency="USD"),
         },
         "name-cards": {
-            50: CardPrice(base=49.95, currency="USD"),
-            100: CardPrice(base=64.95, currency="USD"),
-            250: CardPrice(base=99.95, currency="USD"),
-            500: CardPrice(base=139.95, currency="USD"),
-            1000: CardPrice(base=189.95, currency="USD"),
+            50: CardPrice(base=49.95, rush=60.00, currency="USD"),
+            100: CardPrice(base=64.95, rush=60.00, currency="USD"),
+            250: CardPrice(base=99.95, rush=60.00, currency="USD"),
+            500: CardPrice(base=139.95, rush=60.00, currency="USD"),
+            1000: CardPrice(base=189.95, rush=60.00, currency="USD"),
         },
         "programs": {
-            50: CardPrice(base=89.95, currency="USD"),
-            100: CardPrice(base=119.95, currency="USD"),
-            250: CardPrice(base=169.95, currency="USD"),
-            500: CardPrice(base=229.95, currency="USD"),
-            1000: CardPrice(base=329.95, currency="USD"),
+            50: CardPrice(base=89.95, rush=60.00, currency="USD"),
+            100: CardPrice(base=119.95, rush=60.00, currency="USD"),
+            250: CardPrice(base=169.95, rush=60.00, currency="USD"),
+            500: CardPrice(base=229.95, rush=60.00, currency="USD"),
+            1000: CardPrice(base=329.95, rush=60.00, currency="USD"),
         },
     },
     "GB": {
-        # ── PLACEHOLDER — replace with your UK printer's actual rates ──
-        # Numbers below are rough conversions from the US tier; fix
-        # before launch once you've agreed terms with the UK printer.
         "tented-name-cards": {
-            50: CardPrice(base=49.95, currency="GBP"),
-            100: CardPrice(base=69.95, currency="GBP"),
-            250: CardPrice(base=99.95, currency="GBP"),
-            500: CardPrice(base=139.95, currency="GBP"),
-            1000: CardPrice(base=189.95, currency="GBP"),
+            # PLACEHOLDER — Dani is using the same USD numbers in GBP
+            # until her UK printer's rates are finalised. Will diverge.
+            25: CardPrice(base=65.52, rush=60.00, currency="GBP"),
+            50: CardPrice(base=78.32, rush=60.00, currency="GBP"),
+            75: CardPrice(base=86.32, rush=70.00, currency="GBP"),
+            100: CardPrice(base=143.92, rush=279.92, currency="GBP"),
         },
         "name-cards": {
-            50: CardPrice(base=39.95, currency="GBP"),
-            100: CardPrice(base=54.95, currency="GBP"),
-            250: CardPrice(base=84.95, currency="GBP"),
-            500: CardPrice(base=119.95, currency="GBP"),
-            1000: CardPrice(base=164.95, currency="GBP"),
+            50: CardPrice(base=39.95, rush=55.00, currency="GBP"),
+            100: CardPrice(base=54.95, rush=55.00, currency="GBP"),
+            250: CardPrice(base=84.95, rush=55.00, currency="GBP"),
+            500: CardPrice(base=119.95, rush=55.00, currency="GBP"),
+            1000: CardPrice(base=164.95, rush=55.00, currency="GBP"),
         },
         "programs": {
-            50: CardPrice(base=74.95, currency="GBP"),
-            100: CardPrice(base=104.95, currency="GBP"),
-            250: CardPrice(base=149.95, currency="GBP"),
-            500: CardPrice(base=199.95, currency="GBP"),
-            1000: CardPrice(base=289.95, currency="GBP"),
+            50: CardPrice(base=74.95, rush=55.00, currency="GBP"),
+            100: CardPrice(base=104.95, rush=55.00, currency="GBP"),
+            250: CardPrice(base=149.95, rush=55.00, currency="GBP"),
+            500: CardPrice(base=199.95, rush=55.00, currency="GBP"),
+            1000: CardPrice(base=289.95, rush=55.00, currency="GBP"),
         },
     },
 }
 
 
-# Per-country add-on prices.
+# Per-country add-on prices. Rush used to live here as a flat per-country
+# fee — it's now per-tier (CardPrice.rush) since tented-name-cards has
+# varying rush by tier and the other types fit naturally into the same
+# shape with one rush value across all their tiers.
 ADDONS: Dict[str, Dict[str, float]] = {
-    "rush": {"US": 60.00, "GB": 55.00},
     "remove_branding": {"US": 12.00, "GB": 10.00},
 }
 
@@ -124,13 +128,21 @@ DEFAULT_COUNTRY = "GB"  # UK default per the 2026-05-16 launch decision
 
 
 def _nearest_tier(country: str, content_type: str, quantity: int) -> Tuple[int, CardPrice]:
-    """Round the quantity up to the smallest tier that fits."""
+    """Round the quantity up to the smallest tier that fits.
+
+    Raises ValueError if quantity exceeds the largest defined tier —
+    orders past the price list need a manual quote, not silent capping
+    that would underprice the order.
+    """
     tiers = PRINT_PRICING[country][content_type]
     for tier_qty in sorted(tiers.keys()):
         if quantity <= tier_qty:
             return tier_qty, tiers[tier_qty]
     largest = max(tiers.keys())
-    return largest, tiers[largest]
+    raise ValueError(
+        f"Orders of {quantity} {content_type} exceed the maximum supported "
+        f"tier of {largest} in {country}. Please contact us for a custom quote."
+    )
 
 
 def quote_card_base(
@@ -141,11 +153,15 @@ def quote_card_base(
     paper_stock: str,
     finish: str,
     color_spec: str,
-) -> Tuple[int, float, str]:
-    """Compute the base card price (no rush / branding / shipping).
+) -> Tuple[int, float, float, str]:
+    """Compute the base card price and rush surcharge for the chosen tier.
 
-    Returns: (quantity_tier_charged, base_price, currency).
+    Returns: (quantity_tier_charged, base_price, rush_surcharge, currency).
+    `rush_surcharge` is the flat USD/GBP amount added on top when the
+    customer chose rush; caller applies the addition if the rush flag is on.
+
     Raises KeyError if country / content_type isn't in the price list.
+    Raises ValueError if quantity exceeds the largest tier (see _nearest_tier).
     """
     if country not in PRINT_PRICING:
         raise KeyError(f"No pricing configured for country {country!r}")
@@ -157,7 +173,7 @@ def quote_card_base(
     base *= PAPER_STOCK_MULTIPLIERS.get(paper_stock, 1.00)
     base *= FINISH_MULTIPLIERS.get(finish, 1.00)
     base *= COLOR_SPEC_MULTIPLIERS.get(color_spec, 1.00)
-    return tier_qty, round(base, 2), price.currency
+    return tier_qty, round(base, 2), price.rush, price.currency
 
 
 def addon_price(name: str, country: str) -> float:

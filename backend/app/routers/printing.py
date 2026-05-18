@@ -81,7 +81,7 @@ def _compute_pricing(
         )
 
     try:
-        quantity_tier, base, currency = pricing.quote_card_base(
+        quantity_tier, base, rush_surcharge, currency = pricing.quote_card_base(
             country=country,
             content_type=content_type,
             quantity=quantity,
@@ -91,8 +91,12 @@ def _compute_pricing(
         )
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        # Quantity exceeded the largest tier. Return 400 with the
+        # printer-friendly message from pricing.py rather than a 500.
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    rush_amount = pricing.addon_price("rush", country) if rush else 0.0
+    rush_amount = rush_surcharge if rush else 0.0
     remove_branding_amount = (
         pricing.addon_price("remove_branding", country) if remove_branding else 0.0
     )

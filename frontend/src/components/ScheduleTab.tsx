@@ -65,8 +65,12 @@ function groupByDate(items: ScheduleItem[]): { date: string | null; items: Sched
   return result;
 }
 
+// 10:00 (10 AM, 24-hour format matching the <input type="time"> value
+// shape) is the default start hour for any new schedule item — most
+// PlaceCard events kick off mid-morning, and pre-filling beats forcing
+// the user to choose for every welcome-drinks / gala-dinner row.
 const EMPTY_FORM = {
-  title: "", description: "", start_date: "", end_date: "", start_hour: "", end_hour: "",
+  title: "", description: "", start_date: "", end_date: "", start_hour: "10:00", end_hour: "",
   venue_name: "", venue_type: "", location: "", notes: "",
   requires_seating: true,
   has_meal: false,

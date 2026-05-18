@@ -181,7 +181,12 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
       setImageData(event.image_data || null);
     } else {
       setName(""); setSalonId(""); setStartDate(""); setEndDate("");
-      setStartTime(""); setEndTime("");
+      // Default start time of 10:00 (10 AM, 24-hour format matching the
+      // <input type="time"> value shape) — most events kick off
+      // mid-morning, and pre-filling beats forcing the user to scroll
+      // a 96-slot picker every time. End time stays empty until the
+      // organizer makes that call.
+      setStartTime("10:00"); setEndTime("");
       setOneDay(true);
       setLocation(""); setVenue(""); setVenueType("");
       setEventCategory(""); setDescription("");

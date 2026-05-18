@@ -26,8 +26,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.print_order import PrintOrder
-from app.services.email import send_customer_receipt
-from app.services.print_rendering import render_print_files_and_notify
+from app.services.email import send_customer_receipt, send_print_order_fulfillment
 
 logger = logging.getLogger("stripe_webhook")
 
@@ -65,7 +64,7 @@ async def stripe_webhook(
     obj = event["data"]["object"]
 
     if event_type == "payment_intent.succeeded":
-        _handle_payment_succeeded(obj, db, request)
+        _handle_payment_succeeded(obj, db)
     elif event_type == "payment_intent.payment_failed":
         _handle_payment_failed(obj, db)
     else:
@@ -74,7 +73,7 @@ async def stripe_webhook(
     return {"received": True}
 
 
-def _handle_payment_succeeded(intent: dict, db: Session, request: Request) -> None:
+def _handle_payment_succeeded(intent: dict, db: Session) -> None:
     order = (
         db.query(PrintOrder)
         .filter(PrintOrder.stripe_payment_intent_id == intent["id"])
@@ -97,39 +96,25 @@ def _handle_payment_succeeded(intent: dict, db: Session, request: Request) -> No
     db.commit()
     order_id = order.id  # capture before the session closes downstream
 
-    # Customer receipt — fire immediately so the buyer gets confirmation
-    # at payment time, not 30+ seconds later when renders finish. Never
-    # blocks fulfillment; failure here just logs.
+    # Customer receipt fires immediately at payment time. Operator
+    # fulfillment email also fires immediately now — it carries the
+    # order data + the low-res design preview + the attendee CSV that
+    # Dani uses to generate the print files locally with her own
+    # toolkit. The server-side Gemini high-res rendering pipeline was
+    # retired on 2026-05-18 because of unreliable flat-vs-mockup output;
+    # see project_placecard_revenue_priority memory for context.
     try:
         send_customer_receipt(order)
     except Exception:
         logger.exception("Customer receipt send failed for order %s", order_id)
 
-    # Schedule the per-attendee Gemini-rendering job on the
-    # APScheduler instance attached to app.state in main.py. The job
-    # takes minutes (N attendees × 2 faces × Gemini latency), which
-    # is well beyond Stripe's webhook timeout — fire-and-forget here,
-    # the webhook returns 200 immediately and Stripe doesn't retry.
-    scheduler = getattr(request.app.state, "scheduler", None)
-    if scheduler is None:
-        # Defensive: if APScheduler isn't running (e.g. import error
-        # at boot), fall back to a thread so the order still gets
-        # rendered + emailed. Slower path but won't block the webhook.
-        import threading
-        logger.warning("Scheduler not on app.state — running render job in a thread")
-        threading.Thread(
-            target=render_print_files_and_notify,
-            args=(order_id,),
-            daemon=True,
-        ).start()
-    else:
-        scheduler.add_job(
-            render_print_files_and_notify,
-            args=(order_id,),
-            id=f"render_order_{order_id}",
-            replace_existing=True,
-        )
-        logger.info("Scheduled print-rendering job for order %s", order_id)
+    try:
+        ok = send_print_order_fulfillment(order)
+        if ok:
+            order.fulfillment_notified_at = datetime.utcnow()
+            db.commit()
+    except Exception:
+        logger.exception("Operator fulfillment email failed for order %s", order_id)
 
 
 def _handle_payment_failed(intent: dict, db: Session) -> None:

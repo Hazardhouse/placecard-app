@@ -152,6 +152,47 @@ h1, h2, h3, h4, h5, h6 {
   border-top: 1px solid var(--border);
 }
 
+/* Pending workspace-invite badge on the dropdown trigger.
+   Small pill rendered between the name and the caret. */
+.user-dropdown-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: #1b4fff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Smaller variant rendered next to the "Account" menu item, so a user
+   who opens the dropdown sees exactly where to click for the invite. */
+.user-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.user-dropdown-item-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #1b4fff;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
 /* ── Account Page ── */
 .account-page {
   max-width: 800px;

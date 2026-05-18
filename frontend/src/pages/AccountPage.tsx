@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { usePendingInvites } from "../contexts/PendingInvitesContext";
 import { supabase } from "../lib/supabase";
 import { api, type ProfileShape, type SalonShape, type PendingInvite } from "../api/client";
 import { fileToCompressedDataUrl } from "../utils/image";
@@ -41,6 +42,10 @@ const ROLES: Role[] = ["Admin", "Editor", "Viewer"];
 
 export default function AccountPage() {
   const { updateUser: authUpdateUser } = useAuth();
+  // The header-dropdown badge reads from the same PendingInvitesContext,
+  // so accept / decline here calls `refresh()` to keep the count in
+  // lockstep without having to plumb a prop through.
+  const { refresh: refreshGlobalPendingInvites } = usePendingInvites();
   const { section } = useParams<{ section?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -311,6 +316,7 @@ export default function AccountPage() {
       /* swallow */
     }
     void refreshUsers();
+    void refreshGlobalPendingInvites();
   };
 
   const handleDeclineInvite = async (memberId: number) => {
@@ -320,6 +326,7 @@ export default function AccountPage() {
       /* swallow */
     }
     void refreshUsers();
+    void refreshGlobalPendingInvites();
   };
 
   return (

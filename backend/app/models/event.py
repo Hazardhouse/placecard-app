@@ -16,6 +16,15 @@ class Event(Base):
     # SQLite has no native UUID type. NOT NULL since migration
     # d4e8b1f5a3c2 (2026-05-16) — every event must have an owner.
     user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    # Workspace this event belongs to. Backfilled to the user's
+    # personal workspace in migration e5a8c4f7b9d2. Access control
+    # is derived via workspace_members (who can see / edit this
+    # workspace's events) — user_id is kept as the "original creator"
+    # but is no longer the access-control key.
+    workspace_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     # Optional Salon membership — events created before the Salon model
     # (and one-offs like single weddings) live with salon_id=NULL.
     # ondelete=SET NULL: removing a salon detaches its events back to

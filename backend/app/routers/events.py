@@ -15,6 +15,10 @@ from app.models.schedule import ScheduleItem
 from app.models.seating import SeatAssignment, SeatingArrangement
 from app.models.table import Table
 from app.schemas.event import EventCreate, EventResponse, EventUpdate
+from app.services.workspace_access import (
+    active_workspace_ids,
+    ensure_personal_workspace,
+)
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -24,11 +28,12 @@ def get_user_event(
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Event:
-    """Resolve an event by ID and assert the caller owns it.
+    """Resolve an event by ID and assert the caller has access to it
+    via workspace membership.
 
-    Returns 404 (not 403) for both missing-event and not-owner cases
-    so existence doesn't leak across user accounts. In dev with
-    `require_auth=False` the user is anonymous and the user_id filter
+    Returns 404 (not 403) for both missing-event and not-a-member cases
+    so existence doesn't leak across accounts. In dev with
+    `require_auth=False` the user is anonymous and the membership filter
     is skipped — every event is reachable, preserving local-dev
     ergonomics. Production with `require_auth=True` enforces.
 
@@ -39,7 +44,19 @@ def get_user_event(
     """
     q = db.query(Event).filter(Event.id == event_id)
     if not user.is_anonymous:
-        q = q.filter(Event.user_id == user.id)
+        ws_ids = active_workspace_ids(db, user)
+        # Either the event is in one of the caller's workspaces, OR
+        # (legacy fallback) the caller is the original creator.
+        # The OR-user_id branch covers events created before the
+        # workspace_id backfill landed; once Slice 1 is fully bedded
+        # in we can drop it.
+        from sqlalchemy import or_
+        q = q.filter(
+            or_(
+                Event.workspace_id.in_(ws_ids) if ws_ids else False,
+                Event.user_id == user.id,
+            )
+        )
     event = q.first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -53,7 +70,16 @@ def list_events(
 ):
     q = db.query(Event).order_by(Event.created_at.desc())
     if not user.is_anonymous:
-        q = q.filter(Event.user_id == user.id)
+        # Show every event in any workspace the caller is a member of.
+        # OR clause covers legacy events with no workspace_id yet.
+        ws_ids = active_workspace_ids(db, user)
+        from sqlalchemy import or_
+        q = q.filter(
+            or_(
+                Event.workspace_id.in_(ws_ids) if ws_ids else False,
+                Event.user_id == user.id,
+            )
+        )
     events = q.all()
     if not events:
         return []
@@ -102,12 +128,19 @@ def create_event(
     db: Session = Depends(get_db),
 ):
     _validate_salon_ownership(db, data.salon_id, user)
+    # Make sure the user has a personal workspace they own — new events
+    # land in it. Idempotent for the common case where it already exists.
+    workspace_id: Optional[int] = None
+    if not user.is_anonymous:
+        ws = ensure_personal_workspace(db, user)
+        workspace_id = ws.id
     event = Event(
         **data.model_dump(),
         public_token=secrets.token_urlsafe(32),
         # Always populated — the AnonymousUser sentinel uses id='anonymous'
         # in dev (require_auth=False); prod requests carry the real Supabase UUID.
         user_id=user.id,
+        workspace_id=workspace_id,
     )
     db.add(event)
     db.commit()

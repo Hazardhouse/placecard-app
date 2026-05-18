@@ -15,6 +15,7 @@ from app.models import email_subscriber as email_subscriber_models  # noqa: F401
 from app.models import design as design_models  # noqa: F401
 from app.models import print_order as print_order_models  # noqa: F401
 from app.models import workspace as workspace_models  # noqa: F401
+from app.models import workspace_member as workspace_member_models  # noqa: F401
 from app.models import profile as profile_models  # noqa: F401
 from app.models import salon as salon_models  # noqa: F401
 from app.routers import attendees, events, printing, places, seating, tables, schedule, users, settings as settings_router, custom_forms, brand_colors, name_cards, restaurant_share, document_import, unsubscribe, designs, stripe_webhook, profiles, salons

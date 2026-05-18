@@ -75,7 +75,7 @@ export default function AccountPage() {
   const [invitePhone, setInvitePhone] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("Viewer");
 
-  const [, setInviteError] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Edit user state
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -220,14 +220,16 @@ export default function AccountPage() {
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return;
     setInviteError(null);
+    // The backend forwards to Supabase Auth's invite endpoint with
+    // the service-role key — that's what actually sends the magic-link
+    // email. If this call fails the user never gets an email, so
+    // surface the error to the operator and don't add a stale row
+    // claiming they were invited.
     try {
-      await fetch("http://localhost:8000/api/users/invite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
-      });
-    } catch {
-      // Backend invite is optional — still add to UI
+      await api.inviteUser({ email: inviteEmail.trim(), role: inviteRole });
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : "Could not send invite.");
+      return;
     }
     const initials = inviteEmail.slice(0, 2).toUpperCase();
     setUsers(prev => [...prev, {
@@ -341,6 +343,9 @@ export default function AccountPage() {
                         <div className="invite-perm-row"><strong>Editor</strong> — Create and edit events, attendees, and seating.</div>
                         <div className="invite-perm-row"><strong>Viewer</strong> — View-only access to events and seating charts.</div>
                       </div>
+                      {inviteError && (
+                        <p style={{ color: "#dc2626", fontSize: 13, marginTop: 8 }}>{inviteError}</p>
+                      )}
                     </div>
                     <div className="invite-modal-footer">
                       <button className="btn" onClick={() => setShowInvite(false)}>Cancel</button>

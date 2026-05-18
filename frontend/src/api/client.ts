@@ -353,6 +353,14 @@ export const api = {
       source_url: string;
     }>("/brand/extract-colors", { method: "POST", body: JSON.stringify({ url }) }),
 
+  // Sends a Supabase Auth invite email (magic link) to the given
+  // address. Backend forwards to Supabase via the service-role key.
+  inviteUser: (data: { email: string; role: "Admin" | "Editor" | "Viewer" }) =>
+    request<{ success: boolean; email: string; role: string }>(
+      "/users/invite",
+      { method: "POST", body: JSON.stringify(data) },
+    ),
+
   generateNameCards: (data: {
     event_type: string;
     content_type?: "tented-name-cards" | "name-cards" | "programs";

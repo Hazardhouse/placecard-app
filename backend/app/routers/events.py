@@ -55,10 +55,26 @@ def list_events(
     if not user.is_anonymous:
         q = q.filter(Event.user_id == user.id)
     events = q.all()
+    if not events:
+        return []
+
+    # Single aggregate query for attendee counts — avoids the N+1
+    # `len(event.attendees)` pattern that fired one SELECT per event
+    # just to count children. Big speedup on accounts with many events.
+    from sqlalchemy import func
+    from app.models.attendee import Attendee
+    event_ids = [e.id for e in events]
+    counts = dict(
+        db.query(Attendee.event_id, func.count(Attendee.id))
+        .filter(Attendee.event_id.in_(event_ids))
+        .group_by(Attendee.event_id)
+        .all()
+    )
+
     result = []
     for event in events:
         resp = EventResponse.model_validate(event)
-        resp.attendee_count = len(event.attendees)
+        resp.attendee_count = counts.get(event.id, 0)
         result.append(resp)
     return result
 

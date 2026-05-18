@@ -241,28 +241,24 @@ export default function EventDetail() {
   };
 
   const loadData = useCallback(async () => {
-    const [ev, att, tbl, arr, sched, forms, savedDesigns] = await Promise.all([
+    // Initial page load = 6 parallel calls. Designs are deferred to
+    // the Collateral tab via a separate useEffect below because saved
+    // designs include full base64 image blobs that can be several MB
+    // — pulling them into the critical path slows the first paint of
+    // every other tab (Attendees, Seating, Schedule).
+    const [ev, att, tbl, arr, sched, forms] = await Promise.all([
       api.getEvent(id),
       api.listAttendees(id),
       api.listTables(id),
       api.listArrangements(id),
       api.listSchedule(id),
       api.listForms(id),
-      // Hydrate persisted designs so navigating to AttendeeDetail or
-      // hard-refreshing the page recovers the set without burning
-      // another round of Gemini generation calls.
-      api.listDesigns(id).catch(() => ({} as Record<string, never>)),
     ]);
     setEvent(ev);
     setAttendees(att);
     setTables(tbl);
     setScheduleItems(sched);
     if (forms.length > 0) setEventForm(forms[0]);
-    setDesignsByType({
-      "tented-name-cards": (savedDesigns as any)["tented-name-cards"] ?? [],
-      "name-cards": (savedDesigns as any)["name-cards"] ?? [],
-      programs: (savedDesigns as any)["programs"] ?? [],
-    });
 
     // Ensure each schedule item that requires seating has a corresponding arrangement
     let allArr = arr;
@@ -293,6 +289,30 @@ export default function EventDetail() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Lazy-load saved designs when the Collateral tab is first opened.
+  // Designs include full base64 image blobs (potentially several MB
+  // each); keeping them off the initial Promise.all keeps the other
+  // tabs fast and only pays the cost when the user actually wants to
+  // see the design gallery. Cached per mount via designsLoadedRef.
+  const designsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (activeTab !== "collateral") return;
+    if (designsLoadedRef.current) return;
+    designsLoadedRef.current = true;
+    api.listDesigns(id)
+      .then(savedDesigns => {
+        setDesignsByType({
+          "tented-name-cards": (savedDesigns as any)["tented-name-cards"] ?? [],
+          "name-cards": (savedDesigns as any)["name-cards"] ?? [],
+          programs: (savedDesigns as any)["programs"] ?? [],
+        });
+      })
+      .catch(() => {
+        // Non-fatal — Collateral tab still renders with empty galleries.
+        designsLoadedRef.current = false;
+      });
+  }, [activeTab, id]);
 
 
   const handleAddAttendee = async (data: Partial<Attendee>) => {

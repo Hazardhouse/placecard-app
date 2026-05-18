@@ -44,7 +44,17 @@ function UserDropdown() {
             <button className="user-dropdown-item" onClick={() => goToAccount("/account")}>
               Account
             </button>
-            <button className="user-dropdown-item user-dropdown-logout" onClick={() => { setOpen(false); signOut(); }}>
+            <button
+              className="user-dropdown-item user-dropdown-logout"
+              onClick={async () => {
+                setOpen(false);
+                await signOut();
+                // Reset the URL so the post-logout LoginPage doesn't
+                // inherit /events/123 (looks broken) or /signup (would
+                // default to Create-account form when we want Sign-in).
+                navigate("/", { replace: true });
+              }}
+            >
               Logout
             </button>
           </div>

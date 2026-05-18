@@ -974,7 +974,12 @@ def send_workspace_invite(
             return False
 
         cta_label = "Log in to accept" if existing_user else "Create your account to accept"
-        cta_path = "/" if existing_user else "/signup"
+        # Send existing users straight to Account → Users, where the
+        # "Pending invites for you" panel renders at the top. Landing on
+        # `/` left the invitee staring at an empty events page with no
+        # signpost to the accept UI. New signups still go to /signup;
+        # they'll see the invite in the same panel after first login.
+        cta_path = "/account" if existing_user else "/signup"
         cta_url = f"{settings.frontend_url.rstrip('/')}{cta_path}"
         role_label = role.capitalize()
 

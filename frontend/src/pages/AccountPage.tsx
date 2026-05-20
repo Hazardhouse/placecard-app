@@ -1470,18 +1470,11 @@ function ProfileEditorSection() {
         <span className="form-hint">{bio.length} / 280</span>
       </div>
 
-      {/* Visibility */}
-      <div className="form-group">
-        <label>Profile visibility</label>
-        <select
-          value={visibility}
-          onChange={e => setVisibility(e.target.value as "public" | "unlisted" | "private")}
-        >
-          <option value="public">Public — anyone can find and view</option>
-          <option value="unlisted">Unlisted — direct link only</option>
-          <option value="private">Private — hidden, members-only later</option>
-        </select>
-      </div>
+      {/* Profile-visibility dropdown + "View public profile →" link
+          both hidden alongside the public profile page itself (commit
+          7064138). The `visibility` state below still defaults to
+          "public" and gets sent on save so existing rows aren't
+          downgraded; we just don't surface the choice. */}
 
       {saveError && <p style={{ color: "#dc2626", fontSize: 13, marginTop: 8 }}>{saveError}</p>}
 
@@ -1493,14 +1486,6 @@ function ProfileEditorSection() {
         >
           {saving ? "Saving…" : saved ? "Saved!" : "Save changes"}
         </button>
-        <a
-          href={`/@${profile.handle}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ fontSize: 13, color: "#1b4fff" }}
-        >
-          View public profile →
-        </a>
       </div>
     </div>
   );

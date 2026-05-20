@@ -816,8 +816,12 @@ export default function EventDetail() {
           </svg>
           <span className="tab-label">Seating</span>
         </button>
+        {/* Premium-treatment tab — this is where print orders happen,
+            i.e. the revenue surface. The `tab-magic` modifier adds
+            gradient text, a tinted icon, and a subtle gradient-shift
+            animation so the tab pulls the eye even when not active. */}
         <button
-          className={`tab ${activeTab === "collateral" ? "active" : ""}`}
+          className={`tab tab-magic ${activeTab === "collateral" ? "active" : ""}`}
           onClick={() => setActiveTab("collateral")}
           aria-label="Create PlaceCards"
         >

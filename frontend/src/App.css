@@ -1813,6 +1813,54 @@ select:focus {
   border-bottom-color: var(--primary);
 }
 
+/* "Create PlaceCards" tab gets a premium treatment — gradient text on
+   the label plus a tinted star icon — so it reads as the marquee
+   surface even when the user is parked on another tab. Print orders
+   are the revenue path; the tab should look like it's where the value
+   lives. Applied via the `tab-magic` modifier in EventDetail.tsx. */
+.tab-magic .tab-label {
+  background: linear-gradient(135deg, #1b4fff 0%, #8b5cf6 50%, #ec4899 100%);
+  /* Oversize the gradient so the animation has room to shift. */
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  /* Slow, subtle hue-shift keeps the gradient feeling alive without
+     reading as a flashy animation. 6s is long enough to register as
+     ambient motion, not a flicker. */
+  animation: tab-magic-shift 6s ease-in-out infinite;
+}
+
+@keyframes tab-magic-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.tab-magic .tab-icon {
+  color: #8b5cf6;
+  transition: transform 0.25s ease, color 0.25s ease;
+}
+
+.tab-magic:hover .tab-icon {
+  color: #1b4fff;
+  /* Tiny rotate + scale on hover so the star feels reactive — same
+     "AI sparkle" cue you see on Notion / Linear / Vercel buttons. */
+  transform: rotate(-12deg) scale(1.1);
+}
+
+.tab-magic.active .tab-icon {
+  color: #1b4fff;
+}
+
+/* Keep the active-state underline using the primary blue so the
+   visual hierarchy of "this tab is selected" still reads. */
+.tab-magic.active {
+  border-bottom-color: var(--primary);
+}
+
 /* Hide icons on desktop (text labels only) */
 @media (min-width: 641px) {
   .tab-icon {

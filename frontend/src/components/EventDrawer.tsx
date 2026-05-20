@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type SalonShape } from "../api/client";
+import { api } from "../api/client";
+// SalonShape type import removed alongside the salons state; re-add
+// when the salon picker is unhidden.
 import type { Event } from "../types";
 import { fileToCompressedDataUrl } from "../utils/image";
 import DatePicker from "./DatePicker";
@@ -113,7 +115,9 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
 
   const [name, setName] = useState("");
   const [salonId, setSalonId] = useState<number | "">("");
-  const [salons, setSalons] = useState<SalonShape[]>([]);
+  // salons state previously held the picker options — removed when the
+  // dropdown was hidden (commit 7064138). The `salonId` state above
+  // still carries any existing salon assignment on edited events.
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   // Time fields — currently surfaced only for one-day events. The

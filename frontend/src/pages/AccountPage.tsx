@@ -4,7 +4,9 @@ import { useAuth } from "../contexts/AuthContext";
 import { usePendingInvites } from "../contexts/PendingInvitesContext";
 import { useWorkspaceMembers } from "../contexts/WorkspaceMembersContext";
 import { supabase } from "../lib/supabase";
-import { api, type ProfileShape, type SalonShape, type PendingInvite } from "../api/client";
+// SalonShape type import removed alongside the orphan SalonsManagerSection
+// (see comment block below). Re-add when the salon UI comes back.
+import { api, type ProfileShape, type PendingInvite } from "../api/client";
 import { fileToCompressedDataUrl } from "../utils/image";
 
 type Section = "users" | "profile" | "billing" | "orders" | "settings";
@@ -21,13 +23,9 @@ interface NotificationSettings {
   organizer_whatsapp_enabled: boolean;
 }
 
-interface MessageUsage {
-  sms_used: number;
-  sms_limit: number;
-  whatsapp_used: number;
-  whatsapp_limit: number;
-  plan: string;
-}
+// MessageUsage interface removed alongside the hidden Message Usage
+// panel (commit 1233b9e). SMS / WhatsApp send paths are Phase II;
+// when they ship, restore the interface + the panel.
 
 interface User {
   id: string;
@@ -242,9 +240,8 @@ export default function AccountPage() {
     organizer_reminder_minutes: 30,
     organizer_whatsapp_enabled: true,
   });
-  const [msgUsage, setMsgUsage] = useState<MessageUsage>({
-    sms_used: 0, sms_limit: 500, whatsapp_used: 0, whatsapp_limit: 500, plan: "Pro",
-  });
+  // msgUsage state removed alongside the hidden Message Usage panel.
+  // Restore both interface + state when SMS/WhatsApp ships.
   const [notifSaving, setNotifSaving] = useState(false);
   const [notifSaved, setNotifSaved] = useState(false);
 
@@ -1200,299 +1197,15 @@ function PriceRow({ label, cents, currency }: { label: string; cents: number; cu
 }
 
 
-// ── Salons manager ────────────────────────────────────────────────────
+// ── Salons manager — REMOVED for launch ─────────────────────────────
 //
-// Salons are the recurring containers under a host (§3.2 of the
-// architecture doc). This section lists the user's salons and lets them
-// create / edit / delete. The drawer reuses the existing invite-modal
-// styling for visual consistency with the rest of the account page.
-
-function SalonsManagerSection() {
-  const { myProfile } = useAuth();
-  const [salons, setSalons] = useState<SalonShape[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [editingSalon, setEditingSalon] = useState<SalonShape | "new" | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const s = await api.listMySalons();
-      setSalons(s);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load salons.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void refresh(); }, [refresh]);
-
-  return (
-    <div style={{ marginTop: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Your salons</h3>
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={() => setEditingSalon("new")}
-        >
-          + New salon
-        </button>
-      </div>
-
-      {loading && <p style={{ color: "#64748b", fontSize: 14 }}>Loading…</p>}
-      {error && <p style={{ color: "#dc2626", fontSize: 14 }}>{error}</p>}
-
-      {!loading && !error && salons.length === 0 && (
-        <div className="account-billing-card">
-          <p className="account-billing-desc">
-            No salons yet. Salons are your recurring series — a weekly dinner club,
-            a book group, a holiday calendar. Events you create can belong to a
-            salon so guests can follow the whole series.
-          </p>
-        </div>
-      )}
-
-      {!loading && salons.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
-          {salons.map(salon => (
-            <SalonCard
-              key={salon.id}
-              salon={salon}
-              hostHandle={myProfile?.handle}
-              onEdit={() => setEditingSalon(salon)}
-            />
-          ))}
-        </div>
-      )}
-
-      {editingSalon !== null && (
-        <SalonEditorDrawer
-          salon={editingSalon === "new" ? null : editingSalon}
-          onClose={() => setEditingSalon(null)}
-          onSaved={() => { setEditingSalon(null); void refresh(); }}
-          onDeleted={() => { setEditingSalon(null); void refresh(); }}
-        />
-      )}
-    </div>
-  );
-}
-
-function SalonCard({
-  salon, hostHandle, onEdit,
-}: { salon: SalonShape; hostHandle: string | undefined; onEdit: () => void }) {
-  return (
-    <div className="account-billing-card" style={{ padding: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-        <div style={{ fontWeight: 600, fontSize: 15, color: "#0f172a" }}>{salon.name}</div>
-        <button
-          onClick={onEdit}
-          style={{
-            background: "none", border: "none", color: "#1b4fff", fontSize: 13,
-            cursor: "pointer", padding: 0,
-          }}
-        >
-          Edit
-        </button>
-      </div>
-      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 8 }}>
-        @{salon.slug} · {salon.event_count} event{salon.event_count === 1 ? "" : "s"}
-      </div>
-      {salon.description && (
-        <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.4, marginBottom: 8 }}>
-          {salon.description.length > 110 ? salon.description.slice(0, 110) + "…" : salon.description}
-        </div>
-      )}
-      {hostHandle && (
-        <a
-          href={`/@${hostHandle}/${salon.slug}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ fontSize: 12, color: "#1b4fff" }}
-        >
-          View public salon →
-        </a>
-      )}
-    </div>
-  );
-}
-
-function SalonEditorDrawer({
-  salon, onClose, onSaved, onDeleted,
-}: {
-  salon: SalonShape | null;
-  onClose: () => void;
-  onSaved: () => void;
-  onDeleted: () => void;
-}) {
-  const editing = salon !== null;
-  const [name, setName] = useState(salon?.name ?? "");
-  const [slug, setSlug] = useState(salon?.slug ?? "");
-  const [description, setDescription] = useState(salon?.description ?? "");
-  const [visibility, setVisibility] = useState<"public" | "unlisted" | "private">(salon?.visibility ?? "public");
-  const [joinMode, setJoinMode] = useState<"closed" | "request_to_join" | "open">(salon?.join_mode ?? "request_to_join");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      if (editing && salon) {
-        await api.updateSalon(salon.id, {
-          name: name.trim(),
-          slug: slug.trim() || undefined,
-          description: description.trim() || null,
-          visibility,
-          join_mode: joinMode,
-        });
-      } else {
-        await api.createSalon({
-          name: name.trim(),
-          slug: slug.trim() || undefined,
-          description: description.trim() || undefined,
-          visibility,
-          join_mode: joinMode,
-        });
-      }
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!salon) return;
-    setSaving(true);
-    try {
-      await api.deleteSalon(salon.id);
-      onDeleted();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <>
-      <div className="invite-overlay" onClick={onClose} />
-      <div className="invite-modal" style={{ maxWidth: 520 }}>
-        <div className="invite-modal-header">
-          <h3>{editing ? "Edit salon" : "New salon"}</h3>
-          <button className="invite-close" onClick={onClose}>✕</button>
-        </div>
-        <div className="invite-modal-body">
-          <div className="form-group">
-            <label>Name *</label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Wednesday Dinners"
-              maxLength={255}
-              autoFocus
-            />
-          </div>
-          <div className="form-group">
-            <label>Slug</label>
-            <input
-              type="text"
-              value={slug}
-              onChange={e => setSlug(e.target.value.toLowerCase())}
-              placeholder={editing ? "" : "Auto-generated from name if left blank"}
-              maxLength={80}
-            />
-            <span className="form-hint">
-              The URL is <code>placecard-events.app/@your-handle/{slug || "(auto)"}</code>
-            </span>
-          </div>
-          <div className="form-group">
-            <label>Description</label>
-            <textarea
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="One or two lines about the series."
-              rows={3}
-              maxLength={500}
-            />
-          </div>
-          <div className="form-group">
-            <label>Visibility</label>
-            <select value={visibility} onChange={e => setVisibility(e.target.value as typeof visibility)}>
-              <option value="public">Public — discoverable on your profile</option>
-              <option value="unlisted">Unlisted — direct link only</option>
-              <option value="private">Private — members only (Phase II)</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Join mode</label>
-            <select value={joinMode} onChange={e => setJoinMode(e.target.value as typeof joinMode)}>
-              <option value="request_to_join">Guest list (you approve each request)</option>
-              <option value="closed">Closed (you add guests directly)</option>
-              <option value="open">Open (anyone can join)</option>
-            </select>
-          </div>
-          {error && <p style={{ color: "#dc2626", fontSize: 13 }}>{error}</p>}
-        </div>
-        <div className="invite-modal-footer">
-          <button className="btn" onClick={onClose} disabled={saving}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving || !name.trim()}
-          >
-            {saving ? "Saving…" : editing ? "Save" : "Create salon"}
-          </button>
-          {editing && !confirmDelete && (
-            <button
-              type="button"
-              className="drawer-delete-btn"
-              onClick={() => setConfirmDelete(true)}
-              style={{ marginLeft: "auto" }}
-              disabled={saving}
-            >
-              Delete
-            </button>
-          )}
-        </div>
-        {editing && confirmDelete && salon && (
-          <div className="drawer-delete-section">
-            <div className="drawer-delete-confirm">
-              <p>
-                Delete <strong>{salon.name}</strong>? Events in this salon will
-                stay (they detach back to standalone), but the salon page and
-                its URL go away. This can't be undone.
-              </p>
-              <div className="drawer-delete-confirm-actions">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={saving}
-                >
-                  Keep salon
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  onClick={handleDelete}
-                  disabled={saving}
-                >
-                  {saving ? "Deleting…" : "Yes, delete"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
+// SalonsManagerSection + SalonCard + SalonEditorDrawer used to live
+// here. Removed in the build-cleanup commit because tsconfig.app.json
+// enforces `noUnusedLocals` and the trio became dead code when the
+// Host tab stopped calling them (commit 7064138 hid the social
+// layer for launch). Backend salon routes / models / migrations are
+// untouched — restoring this UI is `git show 7064138^:frontend/src/pages/AccountPage.tsx`
+// and pasting back the three functions + their import.
 
 
 // ── Profile editor ────────────────────────────────────────────────────

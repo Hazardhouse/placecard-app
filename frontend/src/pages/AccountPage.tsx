@@ -703,17 +703,24 @@ export default function AccountPage() {
               <h2>Billing</h2>
               <div className="account-billing-card">
                 <div className="account-billing-plan">
-                  <span className="account-plan-name">Pro Plan</span>
-                  <span className="account-plan-price">$29/mo</span>
+                  <span className="account-plan-name">Free Plan</span>
                 </div>
-                <p className="account-billing-desc">Unlimited events, attendees, and seating charts. 500 SMS + 500 WhatsApp messages/mo.</p>
-                <button className="btn btn-sm">Change Plan</button>
+                <p className="account-billing-desc">
+                  All features included. Print orders are billed per
+                  order at checkout — no subscription, no saved payment
+                  method needed.
+                </p>
+                {/* "Change Plan" button intentionally hidden — paid
+                    tiers don't exist yet. Re-enable when subscription
+                    tiers ship in Phase II. */}
               </div>
-              <div className="account-billing-card" style={{ marginTop: 16 }}>
-                <h3>Payment Method</h3>
-                <p className="account-billing-desc">Visa ending in 4242</p>
-                <button className="btn btn-sm">Update</button>
-              </div>
+              {/* Payment Method card hidden — PlaceCard doesn't store a
+                  default payment method on file because there's no
+                  subscription billing yet. Stripe holds the card
+                  details transiently during each print-order checkout
+                  via PaymentIntents. When subscriptions land, this
+                  card comes back wired to a real source of truth (the
+                  customer's Stripe payment methods list). */}
             </div>
           )}
 

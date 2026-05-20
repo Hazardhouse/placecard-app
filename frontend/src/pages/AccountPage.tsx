@@ -689,7 +689,11 @@ export default function AccountPage() {
             <div className="account-section">
               <h2>Host</h2>
               <ProfileEditorSection />
-              <SalonsManagerSection />
+              {/* SalonsManagerSection intentionally hidden for the
+                  launch window. Component still lives below — re-enable
+                  by uncommenting this line when the social / discovery
+                  layer is turned back on. */}
+              {/* <SalonsManagerSection /> */}
             </div>
           )}
 
@@ -1753,33 +1757,15 @@ function ProfileEditorSection() {
         />
       </div>
 
-      {/* Handle */}
-      <div className="form-group">
-        <label>Handle</label>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ color: "#64748b", fontSize: 14 }}>@</span>
-          <input
-            type="text"
-            value={handle}
-            onChange={e => setHandle(e.target.value.toLowerCase())}
-            placeholder="your-handle"
-            style={{ flex: 1 }}
-            maxLength={30}
-          />
-        </div>
-        <span className="form-hint" style={{
-          color: handleStatus === "taken" ? "#dc2626"
-            : handleStatus === "available" ? "#16a34a"
-            : "#64748b",
-        }}>
-          {handleStatus === "checking" && "Checking availability…"}
-          {handleStatus === "available" && "✓ Available"}
-          {handleStatus === "taken" && (handleReason ?? "Not available.")}
-          {handleStatus === "idle" && profile && (
-            <>Your profile: <a href={`/@${profile.handle}`} target="_blank" rel="noopener noreferrer" style={{ color: "#1b4fff" }}>placecard-events.app/@{profile.handle}</a></>
-          )}
-        </span>
-      </div>
+      {/* Handle + "Your profile: placecard-events.app/@..." link both
+          intentionally hidden for the launch window. The public
+          profile page they pointed at is also hidden in App.tsx (see
+          RootDispatcher) — exposing the handle UI here without a live
+          public page to land on would be misleading. The `handle`
+          state is still wired up so existing values save fine when
+          the form is submitted; we just don't surface it to the user.
+          Re-enable by un-commenting this block when the social layer
+          is turned back on. */}
 
       {/* City */}
       <div className="form-group">

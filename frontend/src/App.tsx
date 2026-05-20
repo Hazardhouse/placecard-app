@@ -8,8 +8,10 @@ import LoginPage from "./pages/LoginPage";
 import PublicForm from "./pages/PublicForm";
 import RestaurantView from "./pages/RestaurantView";
 import PublicEvent from "./pages/PublicEvent";
-import ProfilePage from "./pages/ProfilePage";
-import SalonPage from "./pages/SalonPage";
+// ProfilePage + SalonPage imports intentionally removed — both routes
+// are hidden behind a / redirect for the launch window. Components
+// still live at pages/ProfilePage.tsx and pages/SalonPage.tsx for
+// when the social layer is re-enabled.
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { PendingInvitesProvider, usePendingInvites } from "./contexts/PendingInvitesContext";
 import { WorkspaceMembersProvider, useWorkspaceMembers } from "./contexts/WorkspaceMembersContext";
@@ -235,16 +237,17 @@ function PostAuthLanding() {
 
 function RootDispatcher() {
   const location = useLocation();
-  // `@`-prefixed root paths render public host / salon pages. Otherwise
-  // we fall through to the authenticated app. This sidesteps RR7's
-  // inability to match a `:param` directly after a literal `@`.
+  // Public host profile + salon pages are intentionally hidden for the
+  // launch window — focus is on the print revenue path, not the social
+  // / discoverability layer. Any /@handle or /@handle/salon-slug URL
+  // (old shared links, bookmarks, marketing) redirects to / so the
+  // visitor lands on the authenticated app instead of a dead surface.
+  //
+  // Re-enabling is a one-line revert: restore the SalonPage + ProfilePage
+  // branches below. The components, routes, models and migrations are all
+  // still in place — only the entry point is hidden.
   if (location.pathname.startsWith("/@") && location.pathname.length > 2) {
-    const rest = location.pathname.slice(2); // "dani" or "dani/dinners"
-    const [handle, salonSlug, ...extra] = rest.split("/").filter(Boolean);
-    if (handle && salonSlug && extra.length === 0) {
-      return <SalonPage handle={handle.toLowerCase()} salonSlug={salonSlug.toLowerCase()} />;
-    }
-    return <ProfilePage />;
+    return <Navigate to="/" replace />;
   }
   return <ProtectedLayout />;
 }

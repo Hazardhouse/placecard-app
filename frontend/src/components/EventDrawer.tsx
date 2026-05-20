@@ -146,16 +146,18 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const locationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load the user's salons once when the drawer opens so the dropdown
-  // can offer existing ones. Cheap call — list is small.
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    api.listMySalons()
-      .then(s => { if (!cancelled) setSalons(s); })
-      .catch(() => { /* silent — drawer still works without salons */ });
-    return () => { cancelled = true; };
-  }, [open]);
+  // listMySalons() call intentionally skipped while the salon picker
+  // is hidden (see the commented salon dropdown below). The `salons`
+  // state stays at [] so any code that checks `salons.length > 0`
+  // simply renders nothing. Re-enable when the dropdown comes back.
+  // useEffect(() => {
+  //   if (!open) return;
+  //   let cancelled = false;
+  //   api.listMySalons()
+  //     .then(s => { if (!cancelled) setSalons(s); })
+  //     .catch(() => { /* silent — drawer still works without salons */ });
+  //   return () => { cancelled = true; };
+  // }, [open]);
 
   // Sync form state with the event prop whenever the drawer opens.
   // (Resetting on close as well so the next "create" doesn't show stale data.)
@@ -374,8 +376,14 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
               autoFocus={open}
             />
           </div>
-          {/* Salon membership — optional. Standalone events (one-off
-              weddings, surprise parties) leave this blank. */}
+          {/* Salon picker intentionally hidden for the launch window.
+              Salons are a recurring-event container (see services/) and
+              the whole social/discovery layer is gated off until print
+              revenue is established. The `salonId` state below is
+              still wired up so any pre-existing salon assignment on
+              an edited event saves untouched; new events default to
+              salonId="" which the backend reads as standalone.
+              Re-enable by uncommenting this block.
           {salons.length > 0 && (
             <div className="form-group">
               <label>Salon</label>
@@ -391,6 +399,7 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
               <span className="form-hint">Group this event under one of your recurring salons. Manage salons in Account → Host.</span>
             </div>
           )}
+          */}
           <div className="form-group">
             <label>Description *</label>
             <textarea

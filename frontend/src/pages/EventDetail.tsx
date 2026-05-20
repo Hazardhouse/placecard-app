@@ -725,15 +725,14 @@ export default function EventDetail() {
             )}
           </div>
 
-          {/* "Hosted by" attribution — visible on the host's own view as
-              well as the public event page. Linkable to the host's
-              profile so a guest can land on the salon hub. */}
+          {/* "Hosted by" attribution. The host's display name is shown
+              as plain text — the link to /@handle (public profile page)
+              is intentionally suppressed for the launch window, since
+              that page is hidden too. Both come back together when the
+              social layer is re-enabled. */}
           {myProfile && (
             <div className="event-sidebar-hosted-by">
-              Hosted by{" "}
-              <Link to={`/@${myProfile.handle}`}>
-                {myProfile.display_name}
-              </Link>
+              Hosted by <span style={{ color: "#1b4fff", fontWeight: 600 }}>{myProfile.display_name}</span>
             </div>
           )}
 

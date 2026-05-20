@@ -249,13 +249,14 @@ export default function AccountPage() {
   const [notifSaved, setNotifSaved] = useState(false);
 
   const loadNotifSettings = useCallback(async () => {
+    // api.getMessageUsage() is intentionally skipped here while the
+    // Message Usage block is hidden — no point round-tripping for a
+    // panel that doesn't render. msgUsage stays at its default zeros
+    // so anything that still reads it doesn't crash; re-enable the
+    // fetch when the block comes back in Phase II.
     try {
-      const [settings, usage] = await Promise.all([
-        api.getNotificationSettings(),
-        api.getMessageUsage(),
-      ]);
+      const settings = await api.getNotificationSettings();
       setNotifSettings(prev => ({ ...prev, ...settings }));
-      setMsgUsage(usage);
     } catch {
       // Use defaults
     }
@@ -757,32 +758,22 @@ export default function AccountPage() {
                     </div>
 
                     <div className="settings-field">
-                      <label>Notification channels</label>
+                      <label>Notification channel</label>
+                      {/* SMS + WhatsApp channels are Phase II — the
+                          send paths aren't live yet (see Twilio gate in
+                          launch checklist). For launch we show email
+                          only. The notif_settings columns sms_enabled /
+                          whatsapp_enabled stay on the backend so when
+                          Phase II ships, the schema doesn't migrate;
+                          we just un-hide the other channel cards. */}
                       <div className="settings-channel-options">
-                        <label className="settings-channel-card">
-                          <input
-                            type="checkbox"
-                            checked={notifSettings.sms_enabled}
-                            onChange={e => setNotifSettings(s => ({ ...s, sms_enabled: e.target.checked }))}
-                          />
+                        <div className="settings-channel-card" style={{ borderColor: "#1b4fff", background: "#f1f5ff" }}>
                           <div className="settings-channel-info">
-                            <span className="settings-channel-icon">💬</span>
-                            <span className="settings-channel-name">SMS</span>
+                            <span className="settings-channel-icon">✉️</span>
+                            <span className="settings-channel-name">Email</span>
                           </div>
-                          <span className="settings-channel-desc">Text message to attendee phone numbers</span>
-                        </label>
-                        <label className="settings-channel-card">
-                          <input
-                            type="checkbox"
-                            checked={notifSettings.whatsapp_enabled}
-                            onChange={e => setNotifSettings(s => ({ ...s, whatsapp_enabled: e.target.checked }))}
-                          />
-                          <div className="settings-channel-info">
-                            <span className="settings-channel-icon">📱</span>
-                            <span className="settings-channel-name">WhatsApp</span>
-                          </div>
-                          <span className="settings-channel-desc">WhatsApp message to attendee phone numbers</span>
-                        </label>
+                          <span className="settings-channel-desc">Email reminder to attendee email addresses</span>
+                        </div>
                       </div>
                     </div>
 
@@ -835,69 +826,35 @@ export default function AccountPage() {
 
                     <div className="settings-field">
                       <label>Notification channel</label>
+                      {/* WhatsApp organizer pings are Phase II (same
+                          reason as the attendee channels above). Email
+                          is the only live channel for launch. */}
                       <div className="settings-channel-options">
-                        <label className="settings-channel-card">
-                          <input
-                            type="checkbox"
-                            checked={notifSettings.organizer_whatsapp_enabled}
-                            onChange={e => setNotifSettings(s => ({ ...s, organizer_whatsapp_enabled: e.target.checked }))}
-                          />
+                        <div className="settings-channel-card" style={{ borderColor: "#1b4fff", background: "#f1f5ff" }}>
                           <div className="settings-channel-info">
-                            <span className="settings-channel-icon">📱</span>
-                            <span className="settings-channel-name">WhatsApp</span>
+                            <span className="settings-channel-icon">✉️</span>
+                            <span className="settings-channel-name">Email</span>
                           </div>
-                          <span className="settings-channel-desc">WhatsApp message to team member's number</span>
-                        </label>
+                          <span className="settings-channel-desc">Email message to team member's address</span>
+                        </div>
                       </div>
                     </div>
 
                     <p className="settings-info" style={{ marginTop: 8 }}>
-                      Team members need a WhatsApp number in their profile to receive notifications. Message includes task name, event details, and assignment notes.
+                      Team members need an email address in their profile to receive notifications. Message includes task name, event details, and assignment notes.
                     </p>
                   </div>
                 )}
               </div>
 
-              {/* Message Usage */}
-              <div className="settings-card" style={{ marginTop: 16 }}>
-                <h3>Message Usage</h3>
-                <p className="settings-desc">
-                  Your <strong>{msgUsage.plan}</strong> plan includes {msgUsage.sms_limit.toLocaleString()} SMS and {msgUsage.whatsapp_limit.toLocaleString()} WhatsApp messages per month.
-                </p>
-
-                <div className="settings-usage-meters">
-                  <div className="settings-usage-item">
-                    <div className="settings-usage-header">
-                      <span>💬 SMS</span>
-                      <span className="settings-usage-count">{msgUsage.sms_used.toLocaleString()} / {msgUsage.sms_limit.toLocaleString()}</span>
-                    </div>
-                    <div className="settings-usage-bar">
-                      <div
-                        className={`settings-usage-fill ${msgUsage.sms_used / msgUsage.sms_limit > 0.9 ? "warning" : ""}`}
-                        style={{ width: `${Math.min(100, (msgUsage.sms_used / msgUsage.sms_limit) * 100)}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="settings-usage-item">
-                    <div className="settings-usage-header">
-                      <span>📱 WhatsApp</span>
-                      <span className="settings-usage-count">{msgUsage.whatsapp_used.toLocaleString()} / {msgUsage.whatsapp_limit.toLocaleString()}</span>
-                    </div>
-                    <div className="settings-usage-bar">
-                      <div
-                        className={`settings-usage-fill ${msgUsage.whatsapp_used / msgUsage.whatsapp_limit > 0.9 ? "warning" : ""}`}
-                        style={{ width: `${Math.min(100, (msgUsage.whatsapp_used / msgUsage.whatsapp_limit) * 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <p className="settings-info">
-                  Usage resets on the 1st of each month. Need more messages?{" "}
-                  <a href="#" onClick={e => { e.preventDefault(); goToSection("/account/billing"); }}>Upgrade your plan</a>
-                </p>
-              </div>
+              {/* Message Usage block intentionally hidden for the
+                  launch window. SMS + WhatsApp send paths aren't live
+                  (Phase II) so showing a 0/500 usage meter only
+                  confuses. The MessageUsage interface + state are
+                  also left in place below — they don't hydrate
+                  anymore since the API call is disabled, and they
+                  carry zero runtime cost while idle. Re-enable when
+                  Twilio is wired and per-plan caps actually exist. */}
             </div>
           )}
         </div>

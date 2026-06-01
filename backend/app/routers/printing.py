@@ -28,6 +28,8 @@ from app import pricing
 from app.schemas.print_order import (
     CreateIntentRequest,
     CreateIntentResponse,
+    ItemBreakdown,
+    ItemSnapshot,
     PrintOrderDetailResponse,
     PrintOrderResponse,
     QuoteRequest,
@@ -165,28 +167,113 @@ def create_intent(
     event = _user_event(data.event_id, user, db)
     country = data.shipping.country.upper()
 
-    breakdown = _compute_pricing(
-        country=country,
-        content_type=data.content_type,
-        quantity=data.quantity,
-        paper_stock=data.paper_stock,
-        finish=data.finish,
-        color_spec=data.color_spec,
-        rush=data.rush,
-        remove_branding=data.remove_branding,
-    )
+    # ── Normalize input ───────────────────────────────────────────────
+    # Slice 2 accepts both shapes:
+    #   * NEW (Slice 3 frontend): `items` array — one entry per content
+    #     type in the cart (tented + programs, etc.).
+    #   * LEGACY (pre-Slice-3): `content_type` / `quantity` / `design` /
+    #     `attendees` at the top level — we wrap them in a 1-item array
+    #     so the rest of the handler stays uniform.
+    # The legacy path is kept so a stale frontend deploy mid-rollout
+    # doesn't drop in-flight checkouts. Once the frontend has been on
+    # Slice 3 for a week, we can delete the legacy fields.
+    if data.items:
+        items: List[ItemSnapshot] = list(data.items)
+    elif data.content_type and data.quantity and data.design:
+        items = [ItemSnapshot(
+            content_type=data.content_type,
+            quantity=data.quantity,
+            paper_stock=data.paper_stock,
+            finish=data.finish,
+            color_spec=data.color_spec,
+            design=data.design,
+            attendees=data.attendees or [],
+        )]
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Either an `items` array or legacy single-item fields are required.",
+        )
 
-    # Convert to integer minor units (cents / pence) for Stripe.
-    base_cents = round(breakdown["base_amount"] * 100)
-    # `breakdown["rush_amount"]` is now always the surcharge for display.
-    # Apply it to the actual order total / stored fields only when the
-    # rush flag is on; same for branding. Without this, the order would
-    # be charged for addons the customer didn't tick.
-    rush_cents = round(breakdown["rush_amount"] * 100) if data.rush else 0
-    branding_cents = round(breakdown["remove_branding_amount"] * 100) if data.remove_branding else 0
-    shipping_cents = round(breakdown["shipping_amount"] * 100)
-    total_cents = base_cents + rush_cents + branding_cents + shipping_cents
-    currency_iso = breakdown["currency"]
+    # ── Compute pricing per item, sum into order totals ───────────────
+    # Rush is order-level (single production-window upgrade for the
+    # whole job). remove_branding + shipping are also order-level —
+    # the operator ships one parcel and the branding mark applies to
+    # the whole print run, not per content type.
+    item_breakdowns: List[ItemBreakdown] = []
+    items_json: List[dict] = []
+    total_base_cents = 0
+    total_rush_cents = 0
+    currency_iso: Optional[str] = None
+
+    for item in items:
+        breakdown = _compute_pricing(
+            country=country,
+            content_type=item.content_type,
+            quantity=item.quantity,
+            paper_stock=item.paper_stock,
+            finish=item.finish,
+            color_spec=item.color_spec,
+            rush=data.rush,
+            # remove_branding is applied once at order-level below; the
+            # per-item compute just needs to know the base + rush.
+            remove_branding=False,
+        )
+        item_base_cents = round(breakdown["base_amount"] * 100)
+        item_rush_cents = round(breakdown["rush_amount"] * 100) if data.rush else 0
+        total_base_cents += item_base_cents
+        total_rush_cents += item_rush_cents
+        # Currency is set by country, not content_type, so every item
+        # in a single order shares the same currency. Stamp from first
+        # item; assert subsequent items match (defensive — should never trip).
+        if currency_iso is None:
+            currency_iso = breakdown["currency"]
+        elif breakdown["currency"] != currency_iso:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cart items must share one currency; got {breakdown['currency']} and {currency_iso}.",
+            )
+
+        item_breakdowns.append(ItemBreakdown(
+            content_type=item.content_type,
+            quantity=item.quantity,
+            quantity_tier=breakdown["quantity_tier"],
+            base_amount_cents=item_base_cents,
+            rush_amount_cents=item_rush_cents,
+        ))
+        items_json.append({
+            "content_type": item.content_type,
+            "quantity": item.quantity,
+            "quantity_tier": breakdown["quantity_tier"],
+            "paper_stock": item.paper_stock,
+            "finish": item.finish,
+            "color_spec": item.color_spec,
+            "design_image_b64": item.design.image_b64,
+            "design_mime_type": item.design.mime_type,
+            "design_views_json": (
+                [v.model_dump() for v in item.design.views] if item.design.views else None
+            ),
+            "attendees_json": [a.model_dump() for a in item.attendees],
+            "base_amount_cents": item_base_cents,
+            "rush_amount_cents": item_rush_cents,
+        })
+
+    # Order-level addons + shipping (charged once, not per item).
+    branding_cents = (
+        round(pricing.addon_price("remove_branding", country) * 100)
+        if data.remove_branding else 0
+    )
+    shipping_amount, _shipping_currency = pricing.shipping_price(country)
+    shipping_cents = round(shipping_amount * 100)
+    total_cents = total_base_cents + total_rush_cents + branding_cents + shipping_cents
+
+    # Legacy single-item columns get stamped from item 1 so existing
+    # code paths (Account → Orders detail view, operator email's
+    # "Print specs" section pre-Slice-2-email-refactor) keep rendering
+    # something sensible. items_json is the canonical source going forward.
+    first_item = items[0]
+    first_item_breakdown = item_breakdowns[0]
+    first_item_attendees = [a.model_dump() for a in first_item.attendees]
 
     # Persist the pending order BEFORE the Stripe call so we don't
     # lose the snapshot if the API trips. The placeholder
@@ -194,21 +281,22 @@ def create_intent(
     order = PrintOrder(
         event_id=event.id,
         user_id=user.id,
-        content_type=data.content_type,
-        quantity=data.quantity,
-        quantity_tier=breakdown["quantity_tier"],
-        paper_stock=data.paper_stock,
-        finish=data.finish,
-        color_spec=data.color_spec,
+        content_type=first_item.content_type,
+        quantity=first_item.quantity,
+        quantity_tier=first_item_breakdown.quantity_tier,
+        paper_stock=first_item.paper_stock,
+        finish=first_item.finish,
+        color_spec=first_item.color_spec,
         turnaround_days=data.turnaround_days,
         rush=data.rush,
         remove_branding=data.remove_branding,
-        design_image_b64=data.design.image_b64,
-        design_mime_type=data.design.mime_type,
+        design_image_b64=first_item.design.image_b64,
+        design_mime_type=first_item.design.mime_type,
         design_views_json=(
-            [v.model_dump() for v in data.design.views] if data.design.views else None
+            [v.model_dump() for v in first_item.design.views] if first_item.design.views else None
         ),
-        attendees_json=[a.model_dump() for a in data.attendees],
+        attendees_json=first_item_attendees,
+        items_json=items_json,
         shipping_name=data.shipping.name,
         shipping_email=data.shipping.email,
         shipping_company=data.shipping.company,
@@ -218,8 +306,8 @@ def create_intent(
         shipping_state=data.shipping.state,
         shipping_zip=data.shipping.zip,
         shipping_country=country,
-        base_amount_cents=base_cents,
-        rush_amount_cents=rush_cents,
+        base_amount_cents=total_base_cents,
+        rush_amount_cents=total_rush_cents,
         remove_branding_amount_cents=branding_cents,
         shipping_amount_cents=shipping_cents,
         total_amount_cents=total_cents,
@@ -232,6 +320,12 @@ def create_intent(
 
     stripe.api_key = settings.stripe_secret_key
     try:
+        # Description shows item 1 in the summary; for multi-item orders
+        # the operator email is where the full line-by-line list lives.
+        description_summary = (
+            f"PlaceCard print order #{order.id} — "
+            + " + ".join(f"{i.quantity} {i.content_type}" for i in items)
+        )
         intent = stripe.PaymentIntent.create(
             amount=total_cents,
             currency=currency_iso.lower(),
@@ -241,7 +335,7 @@ def create_intent(
             # Revisit when we want Apple Pay / Google Pay / Link, all
             # of which are no-redirect but require the automatic path.
             payment_method_types=["card"],
-            description=f"PlaceCard print order #{order.id} — {data.quantity} {data.content_type}",
+            description=description_summary,
             metadata={
                 "order_id": str(order.id),
                 "event_id": str(event.id),
@@ -267,11 +361,12 @@ def create_intent(
         order_id=order.id,
         total_amount_cents=total_cents,
         currency=currency_iso.lower(),
-        base_amount_cents=base_cents,
-        rush_amount_cents=rush_cents,
+        rush_amount_cents=total_rush_cents,
         remove_branding_amount_cents=branding_cents,
         shipping_amount_cents=shipping_cents,
-        quantity_tier=breakdown["quantity_tier"],
+        items=item_breakdowns,
+        base_amount_cents=first_item_breakdown.base_amount_cents,
+        quantity_tier=first_item_breakdown.quantity_tier,
     )
 
 

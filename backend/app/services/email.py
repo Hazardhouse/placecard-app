@@ -594,13 +594,47 @@ def _extension_for_mime(mime: str | None) -> str:
     return "png"
 
 
+def _order_items(order) -> list[dict]:
+    """Resolve the canonical items list for an order.
+
+    Slice 2 (2026-05-20) introduced PrintOrder.items_json to carry
+    multi-item carts (tented + programs in one shipment). For orders
+    placed before the migration ran, items_json is None — we
+    reconstruct a 1-item array from the legacy single-item columns so
+    every downstream consumer (this email builder, the Account →
+    Orders detail view, etc.) sees one shape and one shape only.
+    """
+    if order.items_json:
+        return list(order.items_json)
+    return [{
+        "content_type": order.content_type,
+        "quantity": order.quantity,
+        "quantity_tier": order.quantity_tier,
+        "paper_stock": order.paper_stock,
+        "finish": order.finish,
+        "color_spec": order.color_spec,
+        "design_image_b64": order.design_image_b64,
+        "design_mime_type": order.design_mime_type,
+        "design_views_json": order.design_views_json,
+        "attendees_json": order.attendees_json or [],
+        "base_amount_cents": order.base_amount_cents,
+        "rush_amount_cents": order.rush_amount_cents,
+    }]
+
+
 def _print_order_attachments(order, *, include_csv: bool = True) -> list[dict]:
-    """Build the Resend attachments payload for a print order:
-    one entry per design view (Front, Back, etc.) plus optionally an
+    """Build the Resend attachments payload for a print order: every
+    design view across every item (Front, Back) plus optionally an
     attendees CSV.
 
-    `order` is the PrintOrder ORM row; we read the frozen snapshots
-    off it so the email reflects exactly what was paid for.
+    Multi-item orders attach one image (or two, for tented Front+Back)
+    per item, with filenames namespaced by content type so the operator
+    can tell which item is which:
+      design-42-tented-name-cards-front.jpg
+      design-42-tented-name-cards-back.jpg
+      design-42-programs-front.jpg
+      design-42-programs-back.jpg
+      attendees-order-42.csv         ← tented-name-cards CSV only
 
     `include_csv=False` strips the attendee CSV — used for the customer
     receipt, where exposing attendees would leak the print pipeline
@@ -611,40 +645,60 @@ def _print_order_attachments(order, *, include_csv: bool = True) -> list[dict]:
     import io
 
     attachments: list[dict] = []
+    items = _order_items(order)
 
-    # Design views — multi-view designs (Front + Back) get one
-    # attachment per view; single-view designs get one PNG.
-    if order.design_views_json:
-        for i, view in enumerate(order.design_views_json):
-            label = (view.get("label") or f"view-{i + 1}").lower().replace(" ", "-")
-            ext = _extension_for_mime(view.get("mime_type"))
+    # Design files per item. Tented + Programs each have their own Front /
+    # Back design — the operator gets every artwork in the order.
+    for item in items:
+        content_type = item.get("content_type", "item")
+        slug = content_type.replace("_", "-").lower()
+        views = item.get("design_views_json")
+        if views:
+            for i, view in enumerate(views):
+                label = (view.get("label") or f"view-{i + 1}").lower().replace(" ", "-")
+                ext = _extension_for_mime(view.get("mime_type"))
+                attachments.append({
+                    "filename": f"design-{order.id}-{slug}-{label}.{ext}",
+                    "content": view["image_b64"],
+                })
+        elif item.get("design_image_b64"):
+            ext = _extension_for_mime(item.get("design_mime_type"))
             attachments.append({
-                "filename": f"design-{order.id}-{label}.{ext}",
-                "content": view["image_b64"],
+                "filename": f"design-{order.id}-{slug}.{ext}",
+                "content": item["design_image_b64"],
             })
-    else:
-        ext = _extension_for_mime(order.design_mime_type)
-        attachments.append({
-            "filename": f"design-{order.id}.{ext}",
-            "content": order.design_image_b64,
-        })
 
     if include_csv:
-        # Attendees CSV — what to actually print on the cards.
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerow(["Name", "Table", "Dietary"])
-        for a in (order.attendees_json or []):
-            writer.writerow([
-                a.get("name", ""),
-                a.get("table_name", ""),
-                a.get("dietary", "") or "",
-            ])
-        csv_b64 = base64.b64encode(buf.getvalue().encode("utf-8")).decode("ascii")
-        attachments.append({
-            "filename": f"attendees-order-{order.id}.csv",
-            "content": csv_b64,
-        })
+        # Attendees CSV — only built from items that actually carry an
+        # attendees list. Programs are batch-identical (no per-attendee
+        # personalization) so they contribute nothing to the CSV; tented
+        # name cards are the data source. If multiple items happen to
+        # carry attendees, we de-dupe by attendee name so the operator
+        # gets one row per printed person.
+        seen_attendees: set[tuple[str, str]] = set()
+        rows: list[dict] = []
+        for item in items:
+            for a in (item.get("attendees_json") or []):
+                key = (a.get("name", ""), a.get("table_name", ""))
+                if key in seen_attendees:
+                    continue
+                seen_attendees.add(key)
+                rows.append(a)
+        if rows:
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerow(["Name", "Table", "Dietary"])
+            for a in rows:
+                writer.writerow([
+                    a.get("name", ""),
+                    a.get("table_name", ""),
+                    a.get("dietary", "") or "",
+                ])
+            csv_b64 = base64.b64encode(buf.getvalue().encode("utf-8")).decode("ascii")
+            attachments.append({
+                "filename": f"attendees-order-{order.id}.csv",
+                "content": csv_b64,
+            })
 
     return attachments
 
@@ -716,6 +770,23 @@ def _render_print_files_section(render_results, *, total_attendees: int | None =
 """
 
 
+_CONTENT_TYPE_LABELS = {
+    "tented-name-cards": "Tented place cards",
+    "name-cards": "Flat name cards",
+    "programs": "Programs",
+}
+
+
+def _content_type_label(content_type: str) -> str:
+    """Human label for the email body. Falls back to the raw key
+    title-cased if we ever add a new content type and forget to update
+    the map — better than rendering the literal slug."""
+    return _CONTENT_TYPE_LABELS.get(
+        content_type,
+        content_type.replace("-", " ").replace("_", " ").title(),
+    )
+
+
 def _build_print_order_email_html(
     order,
     render_results=None,
@@ -740,9 +811,14 @@ def _build_print_order_email_html(
         "Your PlaceCard Order is a go!".
       - `subtitle`: the grey line under the H1. Customer version
         includes the order number here since the H1 doesn't carry it.
+
+    Multi-item orders (Slice 2 of the 2026-05-20 rebuild) render one
+    Print-specs block + one Pricing row per item, with order-level
+    addons (rush, remove-branding, shipping) appearing once at the
+    bottom of the pricing table.
     """
+    items = _order_items(order)
     total = _money_str(order.total_amount_cents, order.currency)
-    base = _money_str(order.base_amount_cents, order.currency)
     shipping = _money_str(order.shipping_amount_cents, order.currency)
     rush_line = (
         f"<tr><td style='padding:4px 0;'>Rush (next-business-day)</td>"
@@ -764,7 +840,57 @@ def _build_print_order_email_html(
     address_lines.append({"US": "United States", "GB": "United Kingdom"}.get(order.shipping_country, order.shipping_country))
     address_html = "<br>".join(address_lines)
 
-    attendee_count = len(order.attendees_json or [])
+    # ── Per-item Print specs blocks ───────────────────────────────────
+    # Each item gets its own H2 with the human-friendly content-type
+    # name so the operator can read down the list and know what to
+    # produce for each. Quantity → tier, paper, finish, colour, sides
+    # all live here. Order-level state (turnaround, branding) sits
+    # below in the pricing table where it logically belongs.
+    spec_blocks_html_parts: list[str] = []
+    for idx, item in enumerate(items):
+        label = _content_type_label(item.get("content_type", ""))
+        attendees_count = len(item.get("attendees_json") or [])
+        attendees_line = (
+            f"<tr><td style='padding:4px 0;'>Attendees on CSV</td><td style='padding:4px 0;text-align:right;'>{attendees_count}</td></tr>"
+            if attendees_count else ""
+        )
+        header_margin = "24px" if idx == 0 else "20px"
+        spec_blocks_html_parts.append(f"""
+          <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:{header_margin} 0 8px;">Print specs — {label}</h2>
+          <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
+            <tr><td style="padding:4px 0;">Quantity</td><td style="padding:4px 0;text-align:right;">{item.get('quantity')} (charged at tier of {item.get('quantity_tier')})</td></tr>
+            <tr><td style="padding:4px 0;">Paper</td><td style="padding:4px 0;text-align:right;">{item.get('paper_stock')}</td></tr>
+            <tr><td style="padding:4px 0;">Finish</td><td style="padding:4px 0;text-align:right;">{item.get('finish')}</td></tr>
+            <tr><td style="padding:4px 0;">Colour</td><td style="padding:4px 0;text-align:right;">{item.get('color_spec')}</td></tr>
+            {attendees_line}
+          </table>""")
+    spec_blocks_html = "".join(spec_blocks_html_parts)
+
+    # ── Per-item Pricing rows ─────────────────────────────────────────
+    pricing_rows_html_parts: list[str] = []
+    for item in items:
+        label = _content_type_label(item.get("content_type", ""))
+        amount = _money_str(int(item.get("base_amount_cents") or 0), order.currency)
+        pricing_rows_html_parts.append(
+            f"<tr><td style='padding:4px 0;'>{label}</td>"
+            f"<td style='padding:4px 0;text-align:right;'>{amount}</td></tr>"
+        )
+    pricing_rows_html = "".join(pricing_rows_html_parts)
+
+    # ── Order-level summary headers ───────────────────────────────────
+    total_quantity = sum(int(i.get("quantity") or 0) for i in items)
+    turnaround_line = (
+        f"<tr><td style='padding:4px 0;'>Turnaround</td><td style='padding:4px 0;text-align:right;'>"
+        f"{'Next business day' if order.rush else '2&ndash;3 business days'}</td></tr>"
+    )
+    branding_summary_line = (
+        f"<tr><td style='padding:4px 0;'>Branding removed?</td><td style='padding:4px 0;text-align:right;'>"
+        f"{'Yes' if order.remove_branding else 'No'}</td></tr>"
+    )
+
+    # Aggregate attendee count for the per-attendee render section
+    # (operator email only, only when render_results are present).
+    attendee_count = sum(len(i.get("attendees_json") or []) for i in items)
 
     print_files_html = (
         _render_print_files_section(render_results, total_attendees=attendee_count)
@@ -778,8 +904,11 @@ def _build_print_order_email_html(
     )
     csv_attachments_line = (
         f"<br>• Attendee list CSV ({attendee_count} rows)"
-        if include_csv_in_attachments_list else ""
+        if include_csv_in_attachments_list and attendee_count else ""
     )
+    attachments_summary = ", ".join(
+        _content_type_label(i.get("content_type", "")) for i in items
+    ) or "design"
 
     return f"""
 <!DOCTYPE html>
@@ -793,20 +922,17 @@ def _build_print_order_email_html(
           <h1 style="margin:0 0 6px;font-size:22px;color:#0f172a;">{headline}</h1>
           <p style="margin:0 0 24px;color:#64748b;font-size:14px;">{subtitle}</p>
 
-          <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Print specs</h2>
+          <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Order summary</h2>
           <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
-            <tr><td style="padding:4px 0;">Type</td><td style="padding:4px 0;text-align:right;">{order.content_type}</td></tr>
-            <tr><td style="padding:4px 0;">Quantity</td><td style="padding:4px 0;text-align:right;">{order.quantity} (charged at tier of {order.quantity_tier})</td></tr>
-            <tr><td style="padding:4px 0;">Paper</td><td style="padding:4px 0;text-align:right;">{order.paper_stock}</td></tr>
-            <tr><td style="padding:4px 0;">Finish</td><td style="padding:4px 0;text-align:right;">{order.finish}</td></tr>
-            <tr><td style="padding:4px 0;">Colour</td><td style="padding:4px 0;text-align:right;">{order.color_spec}</td></tr>
-            <tr><td style="padding:4px 0;">Turnaround</td><td style="padding:4px 0;text-align:right;">{'Next business day' if order.rush else '2&ndash;3 business days'}</td></tr>
-            <tr><td style="padding:4px 0;">Branding removed?</td><td style="padding:4px 0;text-align:right;">{'Yes' if order.remove_branding else 'No'}</td></tr>
+            <tr><td style="padding:4px 0;">Items in order</td><td style="padding:4px 0;text-align:right;">{len(items)} ({total_quantity} cards total)</td></tr>
+            {turnaround_line}
+            {branding_summary_line}
           </table>
+          {spec_blocks_html}
 
           <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Pricing</h2>
           <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
-            <tr><td style="padding:4px 0;">Cards</td><td style="padding:4px 0;text-align:right;">{base}</td></tr>
+            {pricing_rows_html}
             {rush_line}
             {branding_line}
             <tr><td style="padding:4px 0;">Shipping ({order.shipping_country})</td><td style="padding:4px 0;text-align:right;">{shipping}</td></tr>
@@ -824,7 +950,7 @@ def _build_print_order_email_html(
 
           <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;">Attachments</h2>
           <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">
-            • Source design image(s) — front{' + back' if order.design_views_json else ''} (low-res, for visual reference){csv_attachments_line}
+            • Source design image(s) for {attachments_summary} (low-res, for visual reference){csv_attachments_line}
           </p>
           {stripe_footer_html}
         </td></tr>

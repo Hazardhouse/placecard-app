@@ -68,18 +68,58 @@ class AttendeeSnapshot(BaseModel):
     dietary: Optional[str] = None
 
 
-class CreateIntentRequest(BaseModel):
-    event_id: int
-    content_type: str
+class ItemSnapshot(BaseModel):
+    """One content-type's worth of cart input. Multiple ItemSnapshot
+    entries can ship in a single order (tented name cards + programs
+    bundled together for one Stripe charge). Per-item state lives here;
+    order-level state (shipping address, rush, remove_branding) is on
+    the CreateIntentRequest itself.
+    """
+    content_type: str  # 'tented-name-cards' | 'programs'
     quantity: int
     paper_stock: str = "14PT C2S"
     finish: str = "No coating"
     color_spec: str = "4/4"
+    design: DesignSnapshot
+    # Only tented-name-cards carries an attendees list. Programs are
+    # batch-identical so a single design prints N copies with no per-
+    # attendee personalization — its attendees array stays empty.
+    attendees: List[AttendeeSnapshot] = []
+
+
+class ItemBreakdown(BaseModel):
+    """Per-item pricing breakdown returned in CreateIntentResponse so the
+    Payment-step modal can render a line per content type."""
+    content_type: str
+    quantity: int
+    quantity_tier: int
+    base_amount_cents: int
+    rush_amount_cents: int  # 0 unless order-level rush is on AND this content_type has a per-tier rush surcharge
+
+
+class CreateIntentRequest(BaseModel):
+    event_id: int
+    # Multi-item shape (Slice 2 of the 2026-05-20 rebuild): the frontend
+    # sends one entry per content type the user picked. Order-level
+    # state (rush, remove_branding, shipping) lives below — applied
+    # once, not per-item, because the operator ships one parcel and
+    # rush is a single production-window upgrade for the whole job.
+    items: Optional[List[ItemSnapshot]] = None
+    # ── Legacy single-item fields (deprecated, kept for backward compat) ──
+    # If `items` is omitted, the handler reconstructs a 1-item cart
+    # from these. Lets a stale frontend deploy keep checking out during
+    # the Slice-3 rollout without dropping in-flight requests.
+    content_type: Optional[str] = None
+    quantity: Optional[int] = None
+    paper_stock: str = "14PT C2S"
+    finish: str = "No coating"
+    color_spec: str = "4/4"
+    design: Optional[DesignSnapshot] = None
+    attendees: List[AttendeeSnapshot] = []
+    # ── Order-level addons + shipping ──
     turnaround_days: int = 7
     rush: bool = False
     remove_branding: bool = False
-    design: DesignSnapshot
-    attendees: List[AttendeeSnapshot]
     shipping: ShippingAddress
 
 
@@ -88,14 +128,18 @@ class CreateIntentResponse(BaseModel):
     order_id: int
     total_amount_cents: int
     currency: str  # lowercase ISO ('usd' or 'gbp') — Stripe convention
-    # Price-breakdown line items so the payment step can show
-    # shipping + addons alongside the total. Without these the
-    # customer sees only the summed total and can't tell what's
-    # included.
-    base_amount_cents: int
+    # Order-level totals so the Payment-step modal can render shipping
+    # + addons alongside the grand total.
     rush_amount_cents: int
     remove_branding_amount_cents: int
     shipping_amount_cents: int
+    # Per-item breakdown so the modal renders one price row per content
+    # type ("Tented name cards · £45", "Programs · £62.97", ...). For
+    # single-item legacy callers this is a 1-element array.
+    items: List[ItemBreakdown] = []
+    # ── Legacy single-item fields (deprecated, kept for compat) ──
+    # Mirror item 1's values. Pre-Slice-3 frontends still read these.
+    base_amount_cents: int
     quantity_tier: int
 
 

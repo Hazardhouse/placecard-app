@@ -679,18 +679,26 @@ def _build_view_prompt(
     if content_type == "programs":
         date_header, schedule_block = _schedule_summary(req)
         typed_program = (req.prompt or "").strip() if req else ""
+        # Photo-style cue intentionally labelled "Photo style" / "Composition"
+        # rather than "Style" / "Layout variation". The back-of-program prompt
+        # below issues a very strong literal-rendering instruction ("verbatim,
+        # every entry, nothing added"); when the style sentence sat AFTER that
+        # instruction with the label "Style: …", Gemini interpreted it as more
+        # content to print and rendered the style description onto the card.
+        # Relabelled + moved BEFORE the printed-content instruction so the
+        # model treats it as photographic direction, not a text fragment.
         style_for_program = (
-            f"Style: {typed_program.rstrip('.')}.  Layout variation: {design_brief.rstrip('.')}."
+            f"Photo style: {typed_program.rstrip('.')}.  Composition: {design_brief.rstrip('.')}."
             if typed_program
-            else f"Design style: {design_brief.rstrip('.')}."
+            else f"Photo style: {design_brief.rstrip('.')}."
         )
         if view_label == "Front":
             lines = [
                 f"A minimalist product photo of the front cover of a printed event program on a clean "
                 f"neutral surface. Portrait 4.25\"×5.5\" cardstock, not folded.",
+                style_for_program,
                 f"Printed on the card: event name \"{event_name}\" as the hero line"
                 + (f", event date \"{date_header}\" as a smaller supporting line." if date_header else "."),
-                style_for_program,
             ]
         else:  # Back
             if schedule_block:
@@ -698,17 +706,17 @@ def _build_view_prompt(
                     f"A minimalist product photo of the back of a printed event program on a clean neutral "
                     f"surface. Portrait 4.25\"×5.5\" cardstock, not folded. Same paper as the front of this "
                     f"design.",
+                    style_for_program,
                     f"Printed on the card: the order of events below, verbatim. Include every entry's title, "
                     f"time, location, and description. Render as a clean typographic list, in this order, "
                     f"nothing added, nothing omitted:\n{schedule_block}",
-                    style_for_program,
                 ]
             else:
                 lines = [
                     f"A minimalist product photo of the back of a printed event program on a clean neutral "
                     f"surface. Portrait 4.25\"×5.5\" cardstock, not folded. Same paper as the front.",
-                    "Printed on the card: a single centered line reading \"Schedule to be announced\".",
                     style_for_program,
+                    "Printed on the card: a single centered line reading \"Schedule to be announced\".",
                 ]
 
     # ── TENTED + FLAT NAME CARDS ────────────────────────────────────────

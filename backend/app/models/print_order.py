@@ -40,6 +40,14 @@ class PrintOrder(Base):
     design_mime_type: Mapped[str] = mapped_column(String(50))
     design_views_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
+    # ── Multi-item snapshot (Slice 1 of the 2026-05-20 multi-item rebuild) ──
+    # When the order bundles more than one content type (tented name cards +
+    # programs in the same shipment, e.g.), the full item list lives here.
+    # The legacy single-item columns above still mirror item 1 for read-side
+    # backward compatibility; new code should prefer items_json. Migration
+    # a7c3f2e8b5d4 backfills every historical row from the legacy columns.
+    items_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
     # ── Attendees snapshot ──
     # List of {name, table_name, dietary} dicts captured at order time
     attendees_json: Mapped[list] = mapped_column(JSON)

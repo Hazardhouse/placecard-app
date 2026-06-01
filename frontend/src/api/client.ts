@@ -261,23 +261,33 @@ export const api = {
   // the authoritative amount from pricing.py — client-sent totals are
   // ignored. Returns the client_secret to hand to Stripe.js for the
   // embedded card form.
+  //
+  // Multi-item shape: `items` carries one entry per content type in
+  // the cart (tented name cards + programs in one charge). Order-level
+  // state (rush, remove_branding, shipping) lives at the top level
+  // because it applies once, not per item.
   createPrintIntent: (data: {
     event_id: number;
-    content_type: "tented-name-cards" | "name-cards" | "programs";
-    quantity: number;
-    paper_stock?: string;
-    finish?: string;
-    color_spec?: string;
+    items: {
+      content_type: "tented-name-cards" | "name-cards" | "programs";
+      quantity: number;
+      paper_stock?: string;
+      finish?: string;
+      color_spec?: string;
+      design: {
+        image_b64: string;
+        mime_type: string;
+        description?: string | null;
+        views?: { image_b64: string; mime_type: string; label: string | null }[] | null;
+      };
+      // Only tented carries an attendees list (per-attendee
+      // personalization). Programs send an empty array — they're
+      // batch-identical and don't need a CSV.
+      attendees?: { name: string; table_name?: string | null; dietary?: string | null }[];
+    }[];
     turnaround_days?: number;
     rush?: boolean;
     remove_branding?: boolean;
-    design: {
-      image_b64: string;
-      mime_type: string;
-      description?: string | null;
-      views?: { image_b64: string; mime_type: string; label: string | null }[] | null;
-    };
-    attendees: { name: string; table_name?: string | null; dietary?: string | null }[];
     shipping: {
       name: string;
       email: string;
@@ -295,10 +305,21 @@ export const api = {
       order_id: number;
       total_amount_cents: number;
       currency: string;
-      base_amount_cents: number;
       rush_amount_cents: number;
       remove_branding_amount_cents: number;
       shipping_amount_cents: number;
+      // Per-item breakdown so the Payment-step modal can render one
+      // price row per content type.
+      items: {
+        content_type: string;
+        quantity: number;
+        quantity_tier: number;
+        base_amount_cents: number;
+        rush_amount_cents: number;
+      }[];
+      // Legacy mirrors of item-1 — kept for any caller still reading
+      // the single-item shape.
+      base_amount_cents: number;
       quantity_tier: number;
     }>("/print/checkout/create-intent", { method: "POST", body: JSON.stringify(data) }),
 

@@ -39,19 +39,47 @@ export interface PrintCheckoutAttendee {
   dietary?: string | null;
 }
 
-interface Props {
-  eventId: number;
+/**
+ * One content type's worth of cart input. Multiple CartItem entries
+ * can ship in a single checkout (tented place cards + programs in the
+ * same charge). The order-level fields (rush, remove_branding,
+ * shipping) live on the modal itself, not per item.
+ */
+export interface CartItem {
   contentType: ContentType;
   design: PrintCheckoutDesign;
+  // Per-attendee personalization payload. Tented place cards: one
+  // entry per guest (the event's attendee list). Programs: empty —
+  // programs are batch-identical, no per-attendee CSV needed.
   attendees: PrintCheckoutAttendee[];
-  // Initial values for the addon ticks shown on the first step. The
-  // user can still toggle them inside the modal; this prop just seeds.
-  initialRush?: boolean;
+  // For tented: equals attendees.length (no picker, derived from
+  // the guest list). For programs: chosen from a tier dropdown —
+  // CollateralTab seeds with the smart default (closest tier ≥
+  // attendee count, floor 50).
+  quantity: number;
+}
+
+interface Props {
+  eventId: number;
+  items: CartItem[];
+  // Initial value for the order-level "Remove branding" tick. The
+  // user can still toggle inside the modal; this prop just seeds.
   initialRemoveBranding?: boolean;
   onClose: () => void;
 }
 
 type Step = "options" | "address" | "payment" | "success";
+
+// Tier ladder for the program quantity picker. Mirrors the keys in
+// pricing.PRINT_PRICING[country]["programs"] — keep these in sync
+// when the backend ladder changes.
+const PROGRAM_TIERS = [50, 100, 250, 500, 1000];
+
+const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
+  "tented-name-cards": "Tented place cards",
+  "name-cards": "Flat name cards",
+  programs: "Programs",
+};
 
 
 function formatCurrency(amount: number, currency: string): string {
@@ -61,16 +89,17 @@ function formatCurrency(amount: number, currency: string): string {
 
 export default function PrintCheckoutModal({
   eventId,
-  contentType,
-  design,
-  attendees,
-  initialRush = false,
+  items,
   initialRemoveBranding = false,
   onClose,
 }: Props) {
   const { user: authUser, myProfile } = useAuth();
   const [step, setStep] = useState<Step>("options");
-  const [rush, setRush] = useState(initialRush);
+  // Rush is intentionally removed for the launch window — UK printer
+  // doesn't offer next-day. Pricing table still carries per-tier rush
+  // values for when a US printer with rush support comes online; the
+  // frontend just doesn't surface the tick. Backend `rush` flag always
+  // sends false from here.
   const [removeBranding, setRemoveBranding] = useState(initialRemoveBranding);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<number | null>(null);
@@ -78,64 +107,86 @@ export default function PrintCheckoutModal({
   const [currency, setCurrency] = useState("gbp");
   // Server-authoritative breakdown returned alongside the PaymentIntent.
   // Drives the line-item summary on the Payment step so the customer
-  // can see what makes up the total (shipping, addons).
+  // can see per-content-type pricing alongside shipping + addons.
   const [breakdown, setBreakdown] = useState<{
-    base_amount_cents: number;
     rush_amount_cents: number;
     remove_branding_amount_cents: number;
     shipping_amount_cents: number;
-    quantity_tier: number;
+    items: {
+      content_type: string;
+      quantity: number;
+      quantity_tier: number;
+      base_amount_cents: number;
+      rush_amount_cents: number;
+    }[];
   } | null>(null);
 
-  // Preview quote for the options step. Refetched whenever the addon
-  // ticks change — the server is the authoritative pricer. Country
-  // defaults to GB (UK) since shipping isn't known yet; final pricing
-  // is recomputed on the create-intent call once the address is in.
-  const [optionsQuote, setOptionsQuote] = useState<{
-    currency: string;
+  // Per-item program quantity state. Tented quantities are fixed
+  // (attendees.length); only programs have a user-pickable quantity
+  // from the tier dropdown. Keyed by item index to handle the case
+  // where the user selected multiple programs designs (rare today
+  // but cheap to support). Seeded from each item's initial quantity.
+  const [itemQuantities, setItemQuantities] = useState<number[]>(
+    () => items.map(it => it.quantity),
+  );
+
+  // Per-item quote results for the Options-step preview. One quote
+  // per item, fetched in parallel. The order is the same as `items`
+  // / `itemQuantities` so we can zip them by index.
+  const [optionsQuotes, setOptionsQuotes] = useState<({
     base_amount: number;
-    rush_amount: number;
     remove_branding_amount: number;
-  } | null>(null);
-  // Caps + tier-not-found errors from the quote endpoint. Surfaced
-  // inline on the options step so the user understands why pricing
-  // isn't loading + the Continue button stays disabled until resolved.
-  const [optionsQuoteError, setOptionsQuoteError] = useState<string | null>(null);
+    currency: string;
+  } | null)[]>(() => items.map(() => null));
+  // Caps + tier-not-found errors from the quote endpoint. One slot per
+  // item — surfaced inline so the user knows which item is the problem.
+  const [optionsQuoteErrors, setOptionsQuoteErrors] = useState<(string | null)[]>(
+    () => items.map(() => null),
+  );
 
+  // Re-quote every item whenever its quantity changes (programs picker
+  // moves a tier) or addon ticks change. Each item gets its own quote
+  // call; we don't sum on the frontend — server is the pricer.
   useEffect(() => {
     if (step !== "options") return;
     let cancelled = false;
-    setOptionsQuoteError(null);
-    api.getPrintQuote({
-      country: "GB",
-      content_type: contentType,
-      quantity: attendees.length || 1,
-      rush,
-      remove_branding: removeBranding,
-    })
-      .then(q => {
-        if (!cancelled) {
-          setOptionsQuote({
-            currency: q.currency,
-            base_amount: q.base_amount,
-            rush_amount: q.rush_amount,
-            remove_branding_amount: q.remove_branding_amount,
-          });
+    setOptionsQuoteErrors(items.map(() => null));
+    Promise.all(
+      items.map((item, idx) =>
+        api.getPrintQuote({
+          country: "GB",
+          content_type: item.contentType,
+          quantity: itemQuantities[idx] || 1,
+          rush: false,
+          remove_branding: removeBranding,
+        })
+          .then(q => ({ ok: true as const, idx, q }))
+          .catch((err: Error) => ({ ok: false as const, idx, err })),
+      ),
+    ).then(results => {
+      if (cancelled) return;
+      const nextQuotes: ({
+        base_amount: number;
+        remove_branding_amount: number;
+        currency: string;
+      } | null)[] = items.map(() => null);
+      const nextErrors: (string | null)[] = items.map(() => null);
+      for (const r of results) {
+        if (r.ok) {
+          nextQuotes[r.idx] = {
+            base_amount: r.q.base_amount,
+            remove_branding_amount: r.q.remove_branding_amount,
+            currency: r.q.currency,
+          };
+        } else {
+          nextErrors[r.idx] = r.err.message || "Could not calculate pricing.";
         }
-      })
-      .catch((err: Error) => {
-        if (!cancelled) {
-          // Surface caps + tier errors so the user can adjust the
-          // attendee count before they get to the address step.
-          setOptionsQuote(null);
-          setOptionsQuoteError(err.message || "Could not calculate pricing.");
-        }
-        // Non-fatal — the options preview just shows blanks if the
-        // quote endpoint is unreachable. Real pricing is recomputed
-        // server-side on Continue.
-      });
+      }
+      setOptionsQuotes(nextQuotes);
+      setOptionsQuoteErrors(nextErrors);
+    });
     return () => { cancelled = true; };
-  }, [step, rush, removeBranding, attendees.length, contentType]);
+  }, [step, removeBranding, items, itemQuantities]);
 
   // Shipping fields. UK default per the 2026-05-16 launch decision.
   // Pre-populate from the logged-in PlaceCard account. Profile display
@@ -176,15 +227,21 @@ export default function PrintCheckoutModal({
     try {
       const result = await api.createPrintIntent({
         event_id: eventId,
-        content_type: contentType,
-        quantity: attendees.length || 1,
-        // Rush shortens the production window (4 vs 7 business days)
-        // AND adds the rush surcharge; both happen in tandem.
-        turnaround_days: rush ? 4 : 7,
-        rush,
+        items: items.map((it, idx) => ({
+          content_type: it.contentType,
+          quantity: itemQuantities[idx] || 1,
+          design: it.design,
+          // Programs are batch-identical so send an empty attendees
+          // array; only tented passes the personalization list.
+          attendees: it.contentType === "programs" ? [] : it.attendees,
+        })),
+        // Rush is off everywhere for the launch window — UK printer
+        // doesn't offer next-day. turnaround_days stays at the standard
+        // value; backend ignores the rush field's effect on pricing
+        // when the flag is false.
+        turnaround_days: 7,
+        rush: false,
         remove_branding: removeBranding,
-        design,
-        attendees,
         shipping: {
           name,
           email,
@@ -202,11 +259,10 @@ export default function PrintCheckoutModal({
       setTotalCents(result.total_amount_cents);
       setCurrency(result.currency);
       setBreakdown({
-        base_amount_cents: result.base_amount_cents,
         rush_amount_cents: result.rush_amount_cents,
         remove_branding_amount_cents: result.remove_branding_amount_cents,
         shipping_amount_cents: result.shipping_amount_cents,
-        quantity_tier: result.quantity_tier,
+        items: result.items,
       });
       setStep("payment");
     } catch (err: any) {
@@ -231,62 +287,109 @@ export default function PrintCheckoutModal({
         </div>
 
         <div className="order-modal-body">
-          {/* Design preview at the top of every step */}
-          <div className="order-design-preview">
-            <img
-              src={`data:${design.mime_type};base64,${design.image_b64}`}
-              alt="Selected design"
-              style={{ maxWidth: 200, borderRadius: 6, display: "block", margin: "0 auto" }}
-            />
-            <div className="order-preview-label">
-              {attendees.length} card{attendees.length === 1 ? "" : "s"}
-              {!rush && (
-                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 400, marginTop: 4 }}>
-                  2&ndash;3 day turnaround
+          {/* Cart items strip at the top of every step — one row per
+              item so the user always sees what they're ordering. For
+              tented this shows the design + N cards; for programs it
+              shows the design + the quantity picker (Options step only;
+              read-only on later steps). */}
+          <div className="order-cart-strip">
+            {items.map((it, idx) => {
+              const quote = optionsQuotes[idx];
+              const qty = itemQuantities[idx] || 0;
+              const label = CONTENT_TYPE_LABELS[it.contentType];
+              return (
+                <div key={idx} className="order-cart-item">
+                  <img
+                    src={`data:${it.design.mime_type};base64,${it.design.image_b64}`}
+                    alt={`${label} design`}
+                    className="order-cart-item-image"
+                  />
+                  <div className="order-cart-item-info">
+                    <div className="order-cart-item-label">{label}</div>
+                    <div className="order-cart-item-qty">
+                      {qty} {it.contentType === "programs" ? "programs" : `card${qty === 1 ? "" : "s"}`}
+                    </div>
+                    {quote && (
+                      <div className="order-cart-item-price">
+                        {formatCurrency(quote.base_amount, quote.currency)}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })}
+            <div className="order-cart-meta">2–3 day turnaround</div>
           </div>
 
           {step === "options" && (
             <div className="order-field">
-              {optionsQuoteError && (
+              {/* Per-item errors (caps / tier-not-found). One block per
+                  item that erred — the user can tell which item is the
+                  problem and adjust its quantity / picker before
+                  Continue is re-enabled. */}
+              {optionsQuoteErrors.some(e => e) && (
                 <div
                   style={{
-                    padding: 12,
-                    background: "#fef2f2",
-                    border: "1px solid #fecaca",
-                    color: "#991b1b",
-                    borderRadius: 8,
-                    marginBottom: 12,
-                    fontSize: 14,
-                    lineHeight: 1.5,
+                    padding: 12, background: "#fef2f2", border: "1px solid #fecaca",
+                    color: "#991b1b", borderRadius: 8, marginBottom: 12,
+                    fontSize: 14, lineHeight: 1.5,
                   }}
                 >
-                  {optionsQuoteError}
+                  {optionsQuoteErrors.map((err, idx) =>
+                    err ? (
+                      <div key={idx}>
+                        {CONTENT_TYPE_LABELS[items[idx].contentType]}: {err}
+                      </div>
+                    ) : null,
+                  )}
                 </div>
               )}
-              <label
-                style={{
-                  display: "flex", alignItems: "flex-start", gap: 12, padding: 14,
-                  border: "1px solid var(--border)", borderRadius: 8, cursor: "pointer",
-                  marginBottom: 10,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={rush}
-                  onChange={e => setRush(e.target.checked)}
-                  style={{ marginTop: 3, width: 18, height: 18 }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 2 }}>Need them tomorrow?</div>
-                  <div style={{ fontSize: 13, color: "#64748b" }}>Next-business-day rush printing.</div>
-                </div>
-                <div style={{ fontWeight: 600, color: "#1b4fff", whiteSpace: "nowrap" }}>
-                  {optionsQuote ? `+${formatCurrency(optionsQuote.rush_amount, optionsQuote.currency)}` : "+…"}
-                </div>
-              </label>
+
+              {/* Programs quantity picker — one dropdown per program item.
+                  Tented uses attendees.length and isn't picker-able. */}
+              {items.map((it, idx) =>
+                it.contentType === "programs" ? (
+                  <div
+                    key={`qty-${idx}`}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      gap: 12, padding: 14, border: "1px solid var(--border)",
+                      borderRadius: 8, marginBottom: 10,
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                        Programs quantity
+                      </div>
+                      <div style={{ fontSize: 13, color: "#64748b" }}>
+                        Programs are batch-printed in fixed tier sizes — pick the
+                        one that fits your guest count.
+                      </div>
+                    </div>
+                    <select
+                      value={itemQuantities[idx]}
+                      onChange={e => {
+                        const next = Number(e.target.value);
+                        setItemQuantities(prev =>
+                          prev.map((q, i) => (i === idx ? next : q)),
+                        );
+                      }}
+                      style={{
+                        padding: "8px 12px", border: "1px solid var(--border)",
+                        borderRadius: 6, fontSize: 14, minWidth: 100,
+                      }}
+                    >
+                      {PROGRAM_TIERS.map(tier => (
+                        <option key={tier} value={tier}>{tier}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null,
+              )}
+
+              {/* Remove-branding tick — applies to the whole order, not
+                  per item. Rush tick is intentionally absent for launch
+                  (UK printer doesn't offer it). */}
               <label
                 style={{
                   display: "flex", alignItems: "flex-start", gap: 12, padding: 14,
@@ -307,31 +410,77 @@ export default function PrintCheckoutModal({
                   </div>
                 </div>
                 <div style={{ fontWeight: 600, color: "#1b4fff", whiteSpace: "nowrap" }}>
-                  {optionsQuote ? `+${formatCurrency(optionsQuote.remove_branding_amount, optionsQuote.currency)}` : "+…"}
+                  {/* The remove-branding addon is the same value on every
+                      item's quote (it's a per-country flat fee), so we
+                      can read it off the first item that has a quote. */}
+                  {optionsQuotes.find(q => q) ? (
+                    `+${formatCurrency(optionsQuotes.find(q => q)!.remove_branding_amount, optionsQuotes.find(q => q)!.currency)}`
+                  ) : "+…"}
                 </div>
               </label>
-              {optionsQuote && (
+
+              {/* Subtotal — one line per item plus optional branding addon.
+                  Shipping intentionally not shown here — it's address-
+                  dependent and not known until the next step. */}
+              {optionsQuotes.some(q => q) && (
                 <div
                   style={{
-                    background: "#f8fafc", borderRadius: 8, padding: 12,
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    background: "#f8fafc", borderRadius: 8, padding: 14,
                     fontSize: 14,
                   }}
                 >
-                  <span>
-                    {attendees.length} card{attendees.length === 1 ? "" : "s"} · subtotal
-                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
-                      Shipping calculated at the next step
+                  {items.map((it, idx) => {
+                    const quote = optionsQuotes[idx];
+                    if (!quote) return null;
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: "flex", justifyContent: "space-between",
+                          marginBottom: 6,
+                        }}
+                      >
+                        <span>{CONTENT_TYPE_LABELS[it.contentType]}</span>
+                        <span>{formatCurrency(quote.base_amount, quote.currency)}</span>
+                      </div>
+                    );
+                  })}
+                  {removeBranding && optionsQuotes.find(q => q) && (
+                    <div
+                      style={{
+                        display: "flex", justifyContent: "space-between",
+                        marginBottom: 6, color: "#475569",
+                      }}
+                    >
+                      <span>Remove PlaceCard branding</span>
+                      <span>+{formatCurrency(optionsQuotes.find(q => q)!.remove_branding_amount, optionsQuotes.find(q => q)!.currency)}</span>
                     </div>
-                  </span>
-                  <strong style={{ fontSize: 18 }}>
-                    {formatCurrency(
-                      optionsQuote.base_amount
-                      + (rush ? optionsQuote.rush_amount : 0)
-                      + (removeBranding ? optionsQuote.remove_branding_amount : 0),
-                      optionsQuote.currency,
-                    )}
-                  </strong>
+                  )}
+                  <div
+                    style={{
+                      display: "flex", justifyContent: "space-between",
+                      alignItems: "center", borderTop: "1px solid #e2e8f0",
+                      paddingTop: 8, marginTop: 8,
+                    }}
+                  >
+                    <span>
+                      Subtotal
+                      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                        Shipping calculated at the next step
+                      </div>
+                    </span>
+                    <strong style={{ fontSize: 18 }}>
+                      {(() => {
+                        const anyQuote = optionsQuotes.find(q => q)!;
+                        const totalBase = optionsQuotes.reduce(
+                          (acc, q) => acc + (q?.base_amount ?? 0),
+                          0,
+                        );
+                        const brandingAddon = removeBranding ? anyQuote.remove_branding_amount : 0;
+                        return formatCurrency(totalBase + brandingAddon, anyQuote.currency);
+                      })()}
+                    </strong>
+                  </div>
                 </div>
               )}
             </div>
@@ -425,7 +574,6 @@ export default function PrintCheckoutModal({
                 totalCents={totalCents}
                 currency={currency}
                 breakdown={breakdown}
-                rush={rush}
                 removeBranding={removeBranding}
                 onSuccess={() => setStep("success")}
                 onError={(msg) => setError(msg)}
@@ -471,7 +619,7 @@ export default function PrintCheckoutModal({
               type="button"
               className="btn btn-primary"
               onClick={() => setStep("address")}
-              disabled={!!optionsQuoteError}
+              disabled={optionsQuoteErrors.some(e => e)}
             >
               Continue →
             </button>
@@ -506,7 +654,6 @@ function PaymentStep({
   totalCents,
   currency,
   breakdown,
-  rush,
   removeBranding,
   onSuccess,
   onError,
@@ -514,13 +661,17 @@ function PaymentStep({
   totalCents: number;
   currency: string;
   breakdown: {
-    base_amount_cents: number;
     rush_amount_cents: number;
     remove_branding_amount_cents: number;
     shipping_amount_cents: number;
-    quantity_tier: number;
+    items: {
+      content_type: string;
+      quantity: number;
+      quantity_tier: number;
+      base_amount_cents: number;
+      rush_amount_cents: number;
+    }[];
   } | null;
-  rush: boolean;
   removeBranding: boolean;
   onSuccess: () => void;
   onError: (msg: string) => void;
@@ -581,17 +732,15 @@ function PaymentStep({
         <div className="order-price-display">
           {breakdown && (
             <>
-              <div className="order-price-row">
-                {/* Tier quantity (`breakdown.quantity_tier`) used to be
-                    shown here as "Cards (×25)" but it confused customers
-                    ordering fewer cards than the tier — e.g. 2 cards
-                    priced at the 25-card tier read as if 25 were being
-                    bought. Tier info still surfaces to the operator in
-                    the fulfillment email's Print Specs section. */}
-                <span>Cards</span>
-                <span>{fmt(breakdown.base_amount_cents)}</span>
-              </div>
-              {rush && breakdown.rush_amount_cents > 0 && (
+              {/* One row per cart item — gives the customer a per-content-
+                  type price split before the addons + shipping totals. */}
+              {breakdown.items.map((item, idx) => (
+                <div key={idx} className="order-price-row">
+                  <span>{CONTENT_TYPE_LABELS[item.content_type as ContentType] ?? item.content_type}</span>
+                  <span>{fmt(item.base_amount_cents)}</span>
+                </div>
+              ))}
+              {breakdown.rush_amount_cents > 0 && (
                 <div className="order-price-row">
                   <span>Rush turnaround</span>
                   <span>{fmt(breakdown.rush_amount_cents)}</span>

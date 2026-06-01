@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "../api/client";
 import type { ScheduleItem, SeatingArrangement, Table, Attendee } from "../types";
-import PrintCheckoutModal from "./PrintCheckoutModal";
+import PrintCheckoutModal, { type CartItem } from "./PrintCheckoutModal";
 
 interface Props {
   eventId: number;
@@ -251,9 +251,11 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
     arrangements.length > 0 ? arrangements[0].id : 0
   );
   const [selectedCategory] = useState<DesignCategory>(detectCategory(eventCategory, eventVenueType));
-  // Holds the AI-generated design the user is currently ordering.
-  // null = no checkout open; non-null = PrintCheckoutModal renders.
-  const [checkoutAiDesign, setCheckoutAiDesign] = useState<Design | null>(null);
+  // Cart the user is currently checking out. Empty array = modal hidden;
+  // non-empty = PrintCheckoutModal renders with these items. Each entry
+  // is one content type's worth of cart input (tented + programs in the
+  // same checkout). Built by openPrintFlow from selectedDesignByType.
+  const [checkoutItems, setCheckoutItems] = useState<CartItem[]>([]);
 
   // Canva-style redesign state
   const [aiTab, setAiTab] = useState<"designs" | "ai">("ai");
@@ -441,16 +443,77 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
   };
 
 
-  // Click handler shared by both "Go to Print" surfaces (header CTA + sticky
-  // FAB). Opens PrintCheckoutModal directly at its "options" step — the
-  // rush + remove-branding ticks now live INSIDE the checkout modal so
-  // there's no intermediate popup-to-modal handoff.
+  // Tier ladder for the programs quantity picker. Mirrors the keys in
+  // pricing.PRINT_PRICING[country]["programs"] on the backend.
+  const PROGRAM_TIERS = [50, 100, 250, 500, 1000];
+
+  // Default programs quantity: the smallest tier ≥ attendee count, with
+  // a floor of the minimum tier (so 20 guests → 50 programs, 100 guests
+  // → 100, 150 guests → 250). User can still pick any other tier in
+  // the modal.
+  const defaultProgramQty = (attendeeCount: number): number => {
+    const fit = PROGRAM_TIERS.find(t => t >= attendeeCount);
+    return fit ?? PROGRAM_TIERS[PROGRAM_TIERS.length - 1];
+  };
+
+  // Click handler shared by both "Go to Print" surfaces (header CTA +
+  // sticky FAB). Gathers every selected design across content types
+  // into a single cart and opens PrintCheckoutModal — one modal, one
+  // PaymentIntent, one shipment, even when the user has both tented
+  // place cards and programs queued up.
   const openPrintFlow = () => {
-    const selectedIdx = selectedDesignByType[contentType];
-    if (selectedIdx === null) return;
-    const aiDesign = designsByType[contentType][selectedIdx];
-    if (!aiDesign) return;
-    setCheckoutAiDesign(aiDesign);
+    const attendeesPayload =
+      guestCards.length > 0
+        ? guestCards.map(g => ({
+            name: g.name,
+            table_name: g.tableName,
+            dietary: g.dietary ?? null,
+          }))
+        : attendees.map(a => ({
+            name: a.name,
+            table_name: null,
+            dietary: a.dietary_requirements ?? null,
+          }));
+
+    const cart: CartItem[] = [];
+    for (const ct of CONTENT_TYPES) {
+      const idx = selectedDesignByType[ct];
+      if (idx === null || idx === undefined) continue;
+      const design = designsByType[ct][idx];
+      if (!design) continue;
+
+      if (ct === "tented-name-cards") {
+        // Tented = one card per guest, quantity derived from attendees.
+        cart.push({
+          contentType: ct,
+          design: {
+            image_b64: design.image_b64,
+            mime_type: design.mime_type,
+            description: design.description,
+            views: design.views ?? null,
+          },
+          attendees: attendeesPayload,
+          quantity: attendeesPayload.length || 1,
+        });
+      } else if (ct === "programs") {
+        // Programs = batch-identical, no per-attendee CSV; quantity
+        // picked from the tier dropdown inside the modal. Seed with
+        // the smart default and let the user override.
+        cart.push({
+          contentType: ct,
+          design: {
+            image_b64: design.image_b64,
+            mime_type: design.mime_type,
+            description: design.description,
+            views: design.views ?? null,
+          },
+          attendees: [],
+          quantity: defaultProgramQty(attendees.length),
+        });
+      }
+    }
+    if (cart.length === 0) return;
+    setCheckoutItems(cart);
   };
 
 
@@ -811,30 +874,11 @@ export default function CollateralTab({ eventId, scheduleItems, arrangements, ta
           openPrintFlow sets checkoutAiDesign; this renders the
           single-window 4-step checkout (Options → Address →
           Payment → Success) on top of whatever screen you're on. */}
-      {checkoutAiDesign && (
+      {checkoutItems.length > 0 && (
         <PrintCheckoutModal
           eventId={eventId}
-          contentType={contentType}
-          design={{
-            image_b64: checkoutAiDesign.image_b64,
-            mime_type: checkoutAiDesign.mime_type,
-            description: checkoutAiDesign.description,
-            views: checkoutAiDesign.views ?? null,
-          }}
-          attendees={
-            guestCards.length > 0
-              ? guestCards.map(g => ({
-                  name: g.name,
-                  table_name: g.tableName,
-                  dietary: g.dietary ?? null,
-                }))
-              : attendees.map(a => ({
-                  name: a.name,
-                  table_name: null,
-                  dietary: a.dietary_requirements ?? null,
-                }))
-          }
-          onClose={() => setCheckoutAiDesign(null)}
+          items={checkoutItems}
+          onClose={() => setCheckoutItems([])}
         />
       )}
 

@@ -7140,6 +7140,65 @@ select:focus {
   color: var(--text);
 }
 
+/* Cart strip — rendered at the top of every PrintCheckoutModal step.
+   One row per cart item (tented + programs together when both are
+   selected). Replaces the single-design preview block above.       */
+.order-cart-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.order-cart-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.order-cart-item-image {
+  width: 96px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.order-cart-item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.order-cart-item-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.order-cart-item-qty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.order-cart-item-price {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1b4fff;
+  margin-top: 2px;
+}
+
+.order-cart-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
+}
+
 /* Fields */
 .order-field {
   display: flex;

@@ -48,12 +48,17 @@ PRINT_PRICING: Dict[str, Dict[str, Dict[int, CardPrice]]] = {
             500: CardPrice(base=139.95, rush=60.00, currency="USD"),
             1000: CardPrice(base=189.95, rush=60.00, currency="USD"),
         },
+        # Programs: 40% launch discount applied across all tiers
+        # (base + rush) per Dani's 2026-05-20 directive — placeholder
+        # until the real vendor quote lands. To restore list price:
+        # 50→89.95/60.00, 100→119.95/60.00, 250→169.95/60.00,
+        # 500→229.95/60.00, 1000→329.95/60.00.
         "programs": {
-            50: CardPrice(base=89.95, rush=60.00, currency="USD"),
-            100: CardPrice(base=119.95, rush=60.00, currency="USD"),
-            250: CardPrice(base=169.95, rush=60.00, currency="USD"),
-            500: CardPrice(base=229.95, rush=60.00, currency="USD"),
-            1000: CardPrice(base=329.95, rush=60.00, currency="USD"),
+            50: CardPrice(base=53.97, rush=36.00, currency="USD"),
+            100: CardPrice(base=71.97, rush=36.00, currency="USD"),
+            250: CardPrice(base=101.97, rush=36.00, currency="USD"),
+            500: CardPrice(base=137.97, rush=36.00, currency="USD"),
+            1000: CardPrice(base=197.97, rush=36.00, currency="USD"),
         },
     },
     "GB": {
@@ -70,12 +75,19 @@ PRINT_PRICING: Dict[str, Dict[str, Dict[int, CardPrice]]] = {
             500: CardPrice(base=119.95, rush=55.00, currency="GBP"),
             1000: CardPrice(base=164.95, rush=55.00, currency="GBP"),
         },
+        # Programs: 40% launch discount applied across all tiers
+        # (base + rush) per Dani's 2026-05-20 directive — placeholder
+        # until the real vendor quote lands. To restore list price:
+        # 50→74.95/55.00, 100→104.95/55.00, 250→149.95/55.00,
+        # 500→199.95/55.00, 1000→289.95/55.00. (List prices are
+        # themselves FX-converted from the US ladder and likely
+        # stale — replace with vendor quote directly.)
         "programs": {
-            50: CardPrice(base=74.95, rush=55.00, currency="GBP"),
-            100: CardPrice(base=104.95, rush=55.00, currency="GBP"),
-            250: CardPrice(base=149.95, rush=55.00, currency="GBP"),
-            500: CardPrice(base=199.95, rush=55.00, currency="GBP"),
-            1000: CardPrice(base=289.95, rush=55.00, currency="GBP"),
+            50: CardPrice(base=44.97, rush=33.00, currency="GBP"),
+            100: CardPrice(base=62.97, rush=33.00, currency="GBP"),
+            250: CardPrice(base=89.97, rush=33.00, currency="GBP"),
+            500: CardPrice(base=119.97, rush=33.00, currency="GBP"),
+            1000: CardPrice(base=173.97, rush=33.00, currency="GBP"),
         },
     },
 }

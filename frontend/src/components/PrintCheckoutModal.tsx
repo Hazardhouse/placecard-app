@@ -375,8 +375,16 @@ export default function PrintCheckoutModal({
                         );
                       }}
                       style={{
-                        padding: "8px 12px", border: "1px solid var(--border)",
-                        borderRadius: 6, fontSize: 14, minWidth: 100,
+                        // Override the global `select { width: 100% }`
+                        // rule in App.css so the dropdown shrinks to its
+                        // content (just the tier number + chevron) rather
+                        // than blowing out the row.
+                        width: "auto",
+                        padding: "8px 12px",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        fontSize: 14,
+                        flexShrink: 0,
                       }}
                     >
                       {PROGRAM_TIERS.map(tier => (

@@ -11,6 +11,10 @@ const EVENT_TYPES = [
   "Mastermind", "Speaker", "Drinks",
   "Walk", "Hike", "Cycle", "Climbing", "Tour", "Photoshoot",
 ];
+const EVENT_TYPES_SET = new Set(EVENT_TYPES);
+// Sentinel `<option>` value for the "Other (custom)" choice. Picked so
+// it can't collide with any real event-type label.
+const CUSTOM_EVENT_TYPE_VALUE = "__custom__";
 
 const EVENT_TYPE_ICONS: Record<string, string> = {
   Coffee: "☕", Workshop: "🛠", Breakfast: "🥐", Lunch: "🥗", Dinner: "🍽",
@@ -330,10 +334,30 @@ export default function ScheduleTab({ eventId, items, onItemsChange, eventStartD
   // the last edit / open, which buried Title + Description below the
   // fold on subsequent opens.
   const drawerFormRef = useRef<HTMLFormElement>(null);
+  // Whether the "Other (custom)" event-type input is showing. Tracked
+  // as state (not pure-derived from venue_type) because when the user
+  // clicks Other from a clean form, venue_type is "" — a derived
+  // calc on emptiness alone can't tell "user just clicked Other" from
+  // "no choice made yet." The effect below auto-opens custom mode
+  // when an edited item has a venue_type that's not in the predefined
+  // list (e.g. user previously typed "Yoga").
+  const [customEventTypeOpen, setCustomEventTypeOpen] = useState(false);
   useEffect(() => {
     if (showForm && drawerFormRef.current) {
       drawerFormRef.current.scrollTop = 0;
     }
+  }, [showForm]);
+  // When the drawer opens, decide whether to start in custom-event-type
+  // mode based on the venue_type the form was populated with. Editing
+  // an item that has a custom value (e.g. "Yoga") auto-opens the input
+  // so the user sees what they previously typed; a new item or an item
+  // with a predefined type closes the input.
+  useEffect(() => {
+    if (!showForm) return;
+    setCustomEventTypeOpen(
+      !!form.venue_type && !EVENT_TYPES_SET.has(form.venue_type),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showForm]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -829,12 +853,41 @@ export default function ScheduleTab({ eventId, items, onItemsChange, eventStartD
           </div>
           <div className="form-group">
             <label>Event Type</label>
-            <select value={form.venue_type} onChange={e => set("venue_type", e.target.value)}>
+            <select
+              value={customEventTypeOpen ? CUSTOM_EVENT_TYPE_VALUE : form.venue_type}
+              onChange={e => {
+                const v = e.target.value;
+                if (v === CUSTOM_EVENT_TYPE_VALUE) {
+                  // Switching INTO custom mode. Blank venue_type so the
+                  // input starts empty; flip the flag so the input
+                  // appears below the dropdown.
+                  setCustomEventTypeOpen(true);
+                  set("venue_type", "");
+                } else {
+                  // Picking a predefined type (or "" to clear). Leave
+                  // custom mode and write the picked value straight in.
+                  setCustomEventTypeOpen(false);
+                  set("venue_type", v);
+                }
+              }}
+            >
               <option value="">Select type…</option>
               {EVENT_TYPES.map(t => (
                 <option key={t} value={t}>{EVENT_TYPE_ICONS[t]} {t}</option>
               ))}
+              <option value={CUSTOM_EVENT_TYPE_VALUE}>✏️ Other (custom)</option>
             </select>
+            {customEventTypeOpen && (
+              <input
+                type="text"
+                value={form.venue_type}
+                onChange={e => set("venue_type", e.target.value)}
+                placeholder="Enter event type…"
+                maxLength={50}
+                style={{ marginTop: 8 }}
+                autoFocus
+              />
+            )}
           </div>
           <div className="form-group autocomplete-wrap">
             <label>Venue Name</label>

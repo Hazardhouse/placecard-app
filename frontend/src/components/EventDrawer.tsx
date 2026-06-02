@@ -225,18 +225,61 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
   }, []);
 
   const selectLocation = useCallback((p: Prediction) => {
-    // For establishments, Google splits the prediction into a venue
-    // name (main_text) and an address (secondary_text). When the venue
-    // name is set AND the user hasn't typed their own venue name yet,
-    // auto-fill it so a single click captures both pieces.
-    if (p.main_text && p.secondary_text) {
-      setLocation(p.secondary_text);
-      setVenue(prev => prev || p.main_text);
-    } else {
-      setLocation(p.description);
-    }
+    // Always use the full `description` (e.g. "Menton, France"). The
+    // previous code split into main_text + secondary_text and dropped
+    // main_text into the Venue field — that broke when the user picked
+    // a city prediction (main_text="Menton" leaked into venue while
+    // location collapsed to just "France"). Venue Name has its own
+    // dedicated autocomplete now (see onVenueInput below) so no
+    // cleverness is needed here.
+    setLocation(p.description);
     setShowLocationSuggestions(false);
     setLocationSuggestions([]);
+  }, []);
+
+  // ── Venue Name autocomplete ─────────────────────────────────────────
+  // Google Places autocomplete with the `establishment` type filter so
+  // typing "Hotel Menton Riviera" surfaces the actual venue rather than
+  // every random match. Mirrors the pattern in ScheduleTab.tsx.
+  const [venueSuggestions, setVenueSuggestions] = useState<{ place_id: string; name: string; address: string }[]>([]);
+  const [showVenueSuggestions, setShowVenueSuggestions] = useState(false);
+  const venueTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onVenueInput = useCallback((value: string) => {
+    setVenue(value);
+    if (venueTimer.current) clearTimeout(venueTimer.current);
+    if (value.trim().length < 3) {
+      setVenueSuggestions([]);
+      setShowVenueSuggestions(false);
+      return;
+    }
+    venueTimer.current = setTimeout(async () => {
+      try {
+        const data = await api.placesAutocomplete(value, "establishment");
+        const results = data.predictions.map(p => ({
+          place_id: p.place_id,
+          name: p.main_text,
+          address: p.secondary_text,
+        }));
+        setVenueSuggestions(results);
+        setShowVenueSuggestions(results.length > 0);
+      } catch {
+        setVenueSuggestions([]);
+        setShowVenueSuggestions(false);
+      }
+    }, 250);
+  }, []);
+
+  const selectVenue = useCallback((v: { place_id: string; name: string; address: string }) => {
+    setVenue(v.name);
+    setShowVenueSuggestions(false);
+    setVenueSuggestions([]);
+    // Auto-populate Location with the venue's address only if the user
+    // hasn't typed their own location yet — same defer-to-user policy
+    // as ScheduleTab's selectVenue.
+    if (v.address) {
+      setLocation(prev => prev || v.address);
+    }
   }, []);
 
   const handleImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -549,14 +592,28 @@ export default function EventDrawer({ open, event, onClose, onSaved, onDeleted }
             )}
           </div>
           <div className="form-row">
-            <div className="form-group">
+            <div className="form-group autocomplete-wrap">
               <label>Venue Name</label>
               <input
                 type="text"
                 value={venue}
-                onChange={e => setVenue(e.target.value)}
+                onChange={e => onVenueInput(e.target.value)}
+                onFocus={() => venueSuggestions.length > 0 && setShowVenueSuggestions(true)}
                 placeholder="e.g. Grand Ballroom"
+                autoComplete="off"
               />
+              {showVenueSuggestions && venueSuggestions.length > 0 && (
+                <ul className="autocomplete-list">
+                  {venueSuggestions.map(v => (
+                    <li key={v.place_id} onMouseDown={() => selectVenue(v)}>
+                      <span className="autocomplete-main">{v.name}</span>
+                      {v.address && (
+                        <span className="autocomplete-secondary">{v.address}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <div className="form-group">
               <label>Venue Type</label>

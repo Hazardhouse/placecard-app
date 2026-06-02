@@ -970,7 +970,14 @@ export default function EventDetail() {
 
       {activeTab === "seating" && (
         <div className="seating-view">
-          {attendees.length > 0 && (
+          {/* Banner gate was `attendees.length > 0` which also hid the
+              schedule-item dropdown when the user hadn't added guests
+              yet — they had no way to pick which seating event the
+              chart belonged to. Loosened to `arrangements.length > 0`
+              so the dropdown shows as soon as a seating event exists.
+              Share button only renders when there ARE attendees because
+              sharing an empty chart isn't useful. */}
+          {arrangements.length > 0 && (
             <div className="attendee-form-banner seating-banner">
               <select
                 className="btn btn-sm seating-banner-select"
@@ -990,17 +997,19 @@ export default function EventDetail() {
                   </option>
                 ))}
               </select>
-              <button className="attendee-form-banner-btn seating-banner-share" onClick={() => setShowRestaurantShare("seating")}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="18" cy="5" r="3"/>
-                  <circle cx="6" cy="12" r="3"/>
-                  <circle cx="18" cy="19" r="3"/>
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                </svg>
-                <span className="banner-btn-label-full">Share Seating Chart</span>
-                <span className="banner-btn-label-short">Share</span>
-              </button>
+              {attendees.length > 0 && (
+                <button className="attendee-form-banner-btn seating-banner-share" onClick={() => setShowRestaurantShare("seating")}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="18" cy="5" r="3"/>
+                    <circle cx="6" cy="12" r="3"/>
+                    <circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                  </svg>
+                  <span className="banner-btn-label-full">Share Seating Chart</span>
+                  <span className="banner-btn-label-short">Share</span>
+                </button>
+              )}
             </div>
           )}
           <div className="seating-toolbar">

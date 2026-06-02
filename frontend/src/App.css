@@ -3106,8 +3106,16 @@ select:focus {
   position: absolute;
   top: 12px;
   left: 12px;
-  z-index: 15;
-  display: flex;
+  /* Bumped from 15 → 100 with !important after Dani reported the
+     buttons going missing post-custom-layout flip. Konva's Stage
+     wrapper sometimes ends up with a higher stacking-context than
+     the relative parent expects (each draw/zoom can produce a fresh
+     transform layer), and the previous 15 was occasionally losing
+     to the Stage's canvas element. 100 is well clear of every
+     other in-canvas overlay (draw banner / name prompt are 5-10)
+     while still under modals (999+). */
+  z-index: 100 !important;
+  display: flex !important;
   align-items: center;
   gap: 4px;
   background: white;
@@ -3115,6 +3123,10 @@ select:focus {
   border-radius: 6px;
   padding: 3px 4px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  /* Ensure the controls remain a paint layer regardless of what
+     Konva does below them. Cheap on modern browsers and side-steps
+     the missing-buttons issue Dani hit. */
+  isolation: isolate;
 }
 
 .sb-zoom-btn {

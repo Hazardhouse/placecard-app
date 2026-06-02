@@ -338,6 +338,101 @@ export default function EventDetail() {
   // behavior. activeArrangement?? undefined matches the api shape.
   const arrParam = (): number | undefined => activeArrangement ?? undefined;
 
+  // ── First-edit prompt state ─────────────────────────────────────────
+  // Per Dani's 2026-05-20 directive, the moment a user edits an existing
+  // table on an arrangement that's still on the shared event-default
+  // layout (and there are siblings to worry about), pop up a modal
+  // asking whether the edit should apply across every schedule item
+  // OR only this one. Picking "just this one" silently flips the
+  // arrangement into custom-layout mode + applies the in-flight edit
+  // to the cloned tables. Once acknowledged (in either direction),
+  // we don't re-prompt for that arrangement again this session.
+  type PendingEditKind = "move" | "resize" | "rename" | "delete" | "rotate";
+  type PendingEdit = {
+    kind: PendingEditKind;
+    tableId: number;
+    tableName: string;            // used to find the cloned twin after a custom-mode flip
+    payload: Record<string, unknown>;
+    revert: () => void;            // restore local state if the user dismisses
+  };
+  const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
+  // Session-scoped set of arrangement ids the user has already answered
+  // the prompt for. Not persisted — a refresh re-prompts, which is fine
+  // since the answer is one click and the safety value is high.
+  const acknowledgedArrIdsRef = useRef<Set<number>>(new Set());
+
+  // True when the active arrangement is on shared layout AND there's
+  // more than one arrangement on this event AND the user hasn't already
+  // acknowledged the prompt for this arrangement this session. Drives
+  // whether table-edit handlers go straight to the API or stash the
+  // edit until the user picks a policy.
+  const editNeedsPolicyPrompt = (): boolean => {
+    if (!activeArrangement) return false;
+    if (arrangements.length <= 1) return false;
+    const arr = arrangements.find(a => a.id === activeArrangement);
+    if (!arr) return false;
+    if (arr.uses_custom_layout) return false;
+    if (acknowledgedArrIdsRef.current.has(arr.id)) return false;
+    return true;
+  };
+
+  // Apply a pending edit either against the shared layout (no scope)
+  // or against the now-custom arrangement (`arrangementId` provided).
+  // For the custom path we refetch tables — the clones have new ids
+  // — and find the matching table by NAME (stable across clone) so
+  // the user's in-flight edit hits the right row.
+  const applyPendingEdit = async (edit: PendingEdit, customArrangementId?: number) => {
+    let targetId = edit.tableId;
+    if (customArrangementId) {
+      const refreshed = await api.listTables(id, customArrangementId);
+      setTables(refreshed);
+      const twin = refreshed.find(t => t.name === edit.tableName);
+      if (twin) targetId = twin.id;
+    }
+    if (edit.kind === "delete") {
+      await api.deleteTable(id, targetId, customArrangementId);
+      setTables(prev => prev.filter(t => t.id !== targetId));
+      return;
+    }
+    const updated = await api.updateTable(id, targetId, edit.payload, customArrangementId);
+    setTables(prev => prev.map(t => t.id === targetId ? updated : t));
+  };
+
+  const resolvePendingEditAll = async () => {
+    if (!pendingEdit || !activeArrangement) { setPendingEdit(null); return; }
+    acknowledgedArrIdsRef.current.add(activeArrangement);
+    try {
+      await applyPendingEdit(pendingEdit); // no arrangement = operate on shared default
+    } catch (err) {
+      console.error("Failed to apply table edit:", err);
+      pendingEdit.revert();
+    } finally {
+      setPendingEdit(null);
+    }
+  };
+
+  const resolvePendingEditCustom = async () => {
+    if (!pendingEdit || !activeArrangement) { setPendingEdit(null); return; }
+    acknowledgedArrIdsRef.current.add(activeArrangement);
+    try {
+      await api.useCustomLayout(id, activeArrangement);
+      setArrangements(prev => prev.map(a =>
+        a.id === activeArrangement ? { ...a, uses_custom_layout: true } : a,
+      ));
+      await applyPendingEdit(pendingEdit, activeArrangement);
+    } catch (err) {
+      console.error("Failed to switch to custom layout + apply edit:", err);
+      pendingEdit.revert();
+    } finally {
+      setPendingEdit(null);
+    }
+  };
+
+  const cancelPendingEdit = () => {
+    if (pendingEdit) pendingEdit.revert();
+    setPendingEdit(null);
+  };
+
   const handleDrawTable = async (
     name: string, shape: Table["shape"],
     width: number, height: number, capacity: number,
@@ -352,36 +447,101 @@ export default function EventDetail() {
     setDrawMode(false);
   };
 
+  // ── Existing-table edit handlers ─────────────────────────────────
+  // Every one of these uses the same pattern:
+  //   1. Optimistic local update (so the canvas / sidebar feel snappy).
+  //   2. If the active arrangement is on shared layout AND has siblings
+  //      AND the user hasn't acknowledged the policy yet, stash the
+  //      edit as a `pendingEdit` and let the modal handle the API call.
+  //   3. Otherwise, fire the API call directly.
+  // The pre-edit table snapshot is captured so the modal's "Cancel"
+  // button can revert the optimistic state without a refetch.
+
   const handleTableResize = async (tableId: number, width: number, height: number, capacity: number) => {
-    const updated = await api.updateTable(id, tableId, { width, height, capacity }, arrParam());
-    setTables((prev) => prev.map(t => t.id === tableId ? updated : t));
+    const prev = tables.find(t => t.id === tableId);
+    if (!prev) return;
+    setTables(p => p.map(t => t.id === tableId ? { ...t, width, height, capacity } : t));
+    const edit: PendingEdit = {
+      kind: "resize",
+      tableId,
+      tableName: prev.name,
+      payload: { width, height, capacity },
+      revert: () => setTables(p => p.map(t => t.id === tableId ? prev : t)),
+    };
+    if (editNeedsPolicyPrompt()) { setPendingEdit(edit); return; }
+    try {
+      const updated = await api.updateTable(id, tableId, edit.payload, arrParam());
+      setTables(p => p.map(t => t.id === tableId ? updated : t));
+    } catch (err) { console.error("Failed to resize table:", err); edit.revert(); }
   };
 
   const handleDeleteTable = async (tableId: number) => {
-    await api.deleteTable(id, tableId, arrParam());
-    setTables((prev) => prev.filter((t) => t.id !== tableId));
+    const prev = tables.find(t => t.id === tableId);
+    if (!prev) return;
+    setTables(p => p.filter(t => t.id !== tableId));
+    const edit: PendingEdit = {
+      kind: "delete",
+      tableId,
+      tableName: prev.name,
+      payload: {},
+      revert: () => setTables(p => [...p, prev]),
+    };
+    if (editNeedsPolicyPrompt()) { setPendingEdit(edit); return; }
+    try {
+      await api.deleteTable(id, tableId, arrParam());
+    } catch (err) { console.error("Failed to delete table:", err); edit.revert(); }
   };
 
   const handleRenameTable = async (tableId: number, name: string) => {
-    const updated = await api.updateTable(id, tableId, { name }, arrParam());
-    setTables((prev) => prev.map(t => t.id === tableId ? updated : t));
+    const prev = tables.find(t => t.id === tableId);
+    if (!prev) return;
+    setTables(p => p.map(t => t.id === tableId ? { ...t, name } : t));
+    const edit: PendingEdit = {
+      kind: "rename",
+      tableId,
+      tableName: prev.name,
+      payload: { name },
+      revert: () => setTables(p => p.map(t => t.id === tableId ? prev : t)),
+    };
+    if (editNeedsPolicyPrompt()) { setPendingEdit(edit); return; }
+    try {
+      const updated = await api.updateTable(id, tableId, edit.payload, arrParam());
+      setTables(p => p.map(t => t.id === tableId ? updated : t));
+    } catch (err) { console.error("Failed to rename table:", err); edit.revert(); }
   };
 
   const handleTableMove = async (tableId: number, x: number, y: number) => {
-    await api.updateTable(id, tableId, { x_position: x, y_position: y }, arrParam());
-    setTables((prev) =>
-      prev.map((t) => (t.id === tableId ? { ...t, x_position: x, y_position: y } : t))
-    );
+    const prev = tables.find(t => t.id === tableId);
+    if (!prev) return;
+    setTables(p => p.map(t => t.id === tableId ? { ...t, x_position: x, y_position: y } : t));
+    const edit: PendingEdit = {
+      kind: "move",
+      tableId,
+      tableName: prev.name,
+      payload: { x_position: x, y_position: y },
+      revert: () => setTables(p => p.map(t => t.id === tableId ? prev : t)),
+    };
+    if (editNeedsPolicyPrompt()) { setPendingEdit(edit); return; }
+    try {
+      await api.updateTable(id, tableId, edit.payload, arrParam());
+    } catch (err) { console.error("Failed to move table:", err); edit.revert(); }
   };
 
   const handleTableRotate = async (tableId: number, rotation: number) => {
-    // Optimistic local update — snappier than waiting for the round-trip
-    setTables(prev => prev.map(t => (t.id === tableId ? { ...t, rotation } : t)));
+    const prev = tables.find(t => t.id === tableId);
+    if (!prev) return;
+    setTables(p => p.map(t => t.id === tableId ? { ...t, rotation } : t));
+    const edit: PendingEdit = {
+      kind: "rotate",
+      tableId,
+      tableName: prev.name,
+      payload: { rotation },
+      revert: () => setTables(p => p.map(t => t.id === tableId ? prev : t)),
+    };
+    if (editNeedsPolicyPrompt()) { setPendingEdit(edit); return; }
     try {
-      await api.updateTable(id, tableId, { rotation }, arrParam());
-    } catch (err) {
-      console.error("Failed to rotate table:", err);
-    }
+      await api.updateTable(id, tableId, edit.payload, arrParam());
+    } catch (err) { console.error("Failed to rotate table:", err); edit.revert(); }
   };
 
   // Reload the table set whenever the active arrangement changes —
@@ -399,24 +559,12 @@ export default function EventDetail() {
     return () => { cancelled = true; };
   }, [activeArrangement, id]);
 
-  // ── Custom-layout opt-in / opt-out handlers ────────────────────────
-  const handleUseCustomLayout = async () => {
-    if (!activeArrangement) return;
-    try {
-      const updated = await api.useCustomLayout(id, activeArrangement);
-      // Mark the arrangement as custom in local state so the buttons +
-      // any dependent UI flip immediately, then refetch tables so the
-      // canvas re-renders against the cloned set (same shapes /
-      // positions, but new ids — important because subsequent edits
-      // mutate the clones, not the originals).
-      setArrangements(prev => prev.map(a => a.id === updated.id ? { ...a, uses_custom_layout: true } : a));
-      const refreshed = await api.listTables(id, activeArrangement);
-      setTables(refreshed);
-    } catch (err) {
-      console.error("Failed to enable custom layout:", err);
-    }
-  };
-
+  // ── Custom-layout opt-out handler ──────────────────────────────────
+  // Opt-IN now happens inline via the first-edit modal — see
+  // resolvePendingEditCustom above. handleResetLayout reverses the
+  // opt-in (deletes this arrangement's custom tables + clears its
+  // seat assignments + flips uses_custom_layout=false). Triggered by
+  // the toolbar's "↺ Reset to event default" button.
   const handleResetLayout = async () => {
     if (!activeArrangement) return;
     if (!window.confirm(
@@ -1051,6 +1199,70 @@ export default function EventDetail() {
         />
       )}
 
+      {/* First-edit policy modal. Fires the first time a user edits an
+          existing table while the active arrangement is still on the
+          shared event-default layout AND there are siblings (multiple
+          schedule items) that would also see the change. Two paths:
+            * "All schedule items" — apply edit shared (default behavior)
+            * "Just this one" — flip to custom layout, apply edit only
+              to this arrangement's clones, others stay untouched.
+          Either choice is remembered for the session so the user
+          isn't re-prompted on every subsequent edit. */}
+      {pendingEdit && (() => {
+        const currentArr = arrangements.find(a => a.id === activeArrangement);
+        const arrName = currentArr?.name ?? "this schedule item";
+        return (
+          <>
+            <div
+              className="modal-overlay"
+              onClick={cancelPendingEdit}
+              style={{ zIndex: 1000 }}
+            />
+            <div
+              className="order-modal"
+              style={{ zIndex: 1001, maxWidth: 480 }}
+              role="dialog"
+              aria-labelledby="layout-policy-title"
+            >
+              <div className="order-modal-header">
+                <h3 id="layout-policy-title">Apply this change to all schedule items?</h3>
+              </div>
+              <div className="order-modal-body" style={{ padding: "20px 24px" }}>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: "#475569" }}>
+                  Right now every schedule item shares the same table layout. If
+                  this change is for <strong>{arrName}</strong> only (e.g. a
+                  different venue with a different floor plan), pick "Just this
+                  one" and your other schedule items stay untouched.
+                </p>
+              </div>
+              <div className="order-modal-footer">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={cancelPendingEdit}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={resolvePendingEditAll}
+                >
+                  All schedule items
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={resolvePendingEditCustom}
+                >
+                  Just this one
+                </button>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
       {activeTab === "schedule" && (
         <ScheduleTab
           eventId={id}
@@ -1151,36 +1363,25 @@ export default function EventDetail() {
                 />
                 <span>Maximize Conversation</span>
               </label>
-              {/* Custom-layout toggle. Default behavior: every schedule
-                  item shares the same table layout. Click "Use a
-                  different layout" to opt THIS arrangement out of the
-                  shared layout — its tables become a local clone, edits
-                  diverge from the others. "Reset to event default"
-                  reverses the opt-in (tables for this arrangement get
-                  deleted + the user re-seats from the shared layout). */}
+              {/* "Reset to event default" — only shown when this
+                  arrangement is currently on a custom layout. The
+                  inverse ("opt this arrangement INTO a custom layout")
+                  used to live here as a static button, but Dani found
+                  that flow clunky — it required deciding before
+                  editing. Now the first edit triggers a modal that
+                  asks the question in-context (see the pending-edit
+                  state above + the modal rendered below). */}
               {(() => {
                 const currentArr = arrangements.find(a => a.id === activeArrangement);
-                if (!currentArr) return null;
-                if (currentArr.uses_custom_layout) {
-                  return (
-                    <button
-                      className="btn btn-sm"
-                      onClick={handleResetLayout}
-                      title="Discard this schedule item's custom tables and go back to the shared event layout."
-                      style={{ height: 36, whiteSpace: "nowrap" }}
-                    >
-                      ↺ Reset to event default
-                    </button>
-                  );
-                }
+                if (!currentArr?.uses_custom_layout) return null;
                 return (
                   <button
                     className="btn btn-sm"
-                    onClick={handleUseCustomLayout}
-                    title="Edits to tables in this schedule item will no longer affect the others."
+                    onClick={handleResetLayout}
+                    title="Discard this schedule item's custom tables and go back to the shared event layout."
                     style={{ height: 36, whiteSpace: "nowrap" }}
                   >
-                    ⎘ Use a different layout
+                    ↺ Reset to event default
                   </button>
                 );
               })()}

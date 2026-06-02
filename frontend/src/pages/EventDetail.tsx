@@ -1231,7 +1231,13 @@ export default function EventDetail() {
                           aria-selected={drawShape === shape}
                           className={`split-btn-menu-item ${drawShape === shape ? "split-btn-menu-item-active" : ""}`}
                           onClick={() => {
+                            // Picking a shape from the dropdown is the
+                            // user's only signal that they want to draw
+                            // that shape — auto-enter draw mode so they
+                            // don't have to click the main split-btn
+                            // again. Closes the menu in the same gesture.
                             setDrawShape(shape);
+                            setDrawMode(true);
                             setShapeMenuOpen(false);
                           }}
                         >

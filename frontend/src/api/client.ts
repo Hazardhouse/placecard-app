@@ -175,21 +175,30 @@ export const api = {
   deleteAttendee: (eventId: number, id: number) =>
     request<void>(`/events/${eventId}/attendees/${id}`, { method: "DELETE" }),
 
-  // Tables
-  listTables: (eventId: number) =>
-    request<import("../types").Table[]>(`/events/${eventId}/tables`),
-  createTable: (eventId: number, data: Partial<import("../types").Table>) =>
-    request<import("../types").Table>(`/events/${eventId}/tables`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  updateTable: (eventId: number, id: number, data: Partial<import("../types").Table>) =>
-    request<import("../types").Table>(`/events/${eventId}/tables/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
-  deleteTable: (eventId: number, id: number) =>
-    request<void>(`/events/${eventId}/tables/${id}`, { method: "DELETE" }),
+  // Tables — arrangement-aware after the 2026-05-20 custom-layout
+  // refactor. Pass `arrangementId` to scope reads / writes to that
+  // arrangement's own table set when it uses_custom_layout; omit it
+  // (or pass an arrangement that's still on the default) and ops fall
+  // through to the shared event-default layout.
+  listTables: (eventId: number, arrangementId?: number) =>
+    request<import("../types").Table[]>(
+      `/events/${eventId}/tables${arrangementId ? `?arrangement_id=${arrangementId}` : ""}`,
+    ),
+  createTable: (eventId: number, data: Partial<import("../types").Table>, arrangementId?: number) =>
+    request<import("../types").Table>(
+      `/events/${eventId}/tables${arrangementId ? `?arrangement_id=${arrangementId}` : ""}`,
+      { method: "POST", body: JSON.stringify(data) },
+    ),
+  updateTable: (eventId: number, id: number, data: Partial<import("../types").Table>, arrangementId?: number) =>
+    request<import("../types").Table>(
+      `/events/${eventId}/tables/${id}${arrangementId ? `?arrangement_id=${arrangementId}` : ""}`,
+      { method: "PATCH", body: JSON.stringify(data) },
+    ),
+  deleteTable: (eventId: number, id: number, arrangementId?: number) =>
+    request<void>(
+      `/events/${eventId}/tables/${id}${arrangementId ? `?arrangement_id=${arrangementId}` : ""}`,
+      { method: "DELETE" },
+    ),
 
   // Seating
   listArrangements: (eventId: number) =>
@@ -208,6 +217,19 @@ export const api = {
     }),
   deleteArrangement: (eventId: number, id: number) =>
     request<void>(`/events/${eventId}/seating/${id}`, { method: "DELETE" }),
+  // Per-arrangement custom-layout opt-in / opt-out. Used by the
+  // Seating tab's "Use a different layout for this schedule item" /
+  // "Reset to event default" buttons.
+  useCustomLayout: (eventId: number, arrangementId: number) =>
+    request<import("../types").SeatingArrangement>(
+      `/events/${eventId}/seating/${arrangementId}/use-custom-layout`,
+      { method: "POST" },
+    ),
+  resetLayout: (eventId: number, arrangementId: number) =>
+    request<import("../types").SeatingArrangement>(
+      `/events/${eventId}/seating/${arrangementId}/reset-layout`,
+      { method: "POST" },
+    ),
   assignSeat: (eventId: number, arrangementId: number, data: { attendee_id: number; table_id: number; seat_number: number }) =>
     request<import("../types").SeatAssignment>(`/events/${eventId}/seating/${arrangementId}/seats`, {
       method: "POST",

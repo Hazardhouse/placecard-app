@@ -330,33 +330,45 @@ export default function EventDetail() {
     setAttendees((prev) => prev.filter((a) => a.id !== attendeeId));
   };
 
+  // All table CRUD now passes the active arrangement so the backend
+  // can scope to that arrangement's custom-layout clones when
+  // uses_custom_layout=true. When the arrangement is still on the
+  // shared default (the common case), the backend falls through to
+  // the event-default table set — identical to the pre-refactor
+  // behavior. activeArrangement?? undefined matches the api shape.
+  const arrParam = (): number | undefined => activeArrangement ?? undefined;
+
   const handleDrawTable = async (
     name: string, shape: Table["shape"],
     width: number, height: number, capacity: number,
     x: number, y: number
   ) => {
-    const created = await api.createTable(id, { name, shape, capacity, width, height, x_position: x, y_position: y });
+    const created = await api.createTable(
+      id,
+      { name, shape, capacity, width, height, x_position: x, y_position: y },
+      arrParam(),
+    );
     setTables((prev) => [...prev, created]);
     setDrawMode(false);
   };
 
   const handleTableResize = async (tableId: number, width: number, height: number, capacity: number) => {
-    const updated = await api.updateTable(id, tableId, { width, height, capacity });
+    const updated = await api.updateTable(id, tableId, { width, height, capacity }, arrParam());
     setTables((prev) => prev.map(t => t.id === tableId ? updated : t));
   };
 
   const handleDeleteTable = async (tableId: number) => {
-    await api.deleteTable(id, tableId);
+    await api.deleteTable(id, tableId, arrParam());
     setTables((prev) => prev.filter((t) => t.id !== tableId));
   };
 
   const handleRenameTable = async (tableId: number, name: string) => {
-    const updated = await api.updateTable(id, tableId, { name });
+    const updated = await api.updateTable(id, tableId, { name }, arrParam());
     setTables((prev) => prev.map(t => t.id === tableId ? updated : t));
   };
 
   const handleTableMove = async (tableId: number, x: number, y: number) => {
-    await api.updateTable(id, tableId, { x_position: x, y_position: y });
+    await api.updateTable(id, tableId, { x_position: x, y_position: y }, arrParam());
     setTables((prev) =>
       prev.map((t) => (t.id === tableId ? { ...t, x_position: x, y_position: y } : t))
     );
@@ -366,9 +378,57 @@ export default function EventDetail() {
     // Optimistic local update — snappier than waiting for the round-trip
     setTables(prev => prev.map(t => (t.id === tableId ? { ...t, rotation } : t)));
     try {
-      await api.updateTable(id, tableId, { rotation });
+      await api.updateTable(id, tableId, { rotation }, arrParam());
     } catch (err) {
       console.error("Failed to rotate table:", err);
+    }
+  };
+
+  // Reload the table set whenever the active arrangement changes —
+  // a switch in the dropdown might be moving from a default-layout
+  // arrangement to a custom-layout one (or vice versa), and the
+  // canvas needs to show the right set. The legacy initial fetch in
+  // loadData runs once at mount; this effect handles subsequent
+  // arrangement-driven swaps.
+  useEffect(() => {
+    if (!activeArrangement) return;
+    let cancelled = false;
+    api.listTables(id, activeArrangement)
+      .then(next => { if (!cancelled) setTables(next); })
+      .catch(err => console.error("Failed to reload tables for arrangement", err));
+    return () => { cancelled = true; };
+  }, [activeArrangement, id]);
+
+  // ── Custom-layout opt-in / opt-out handlers ────────────────────────
+  const handleUseCustomLayout = async () => {
+    if (!activeArrangement) return;
+    try {
+      const updated = await api.useCustomLayout(id, activeArrangement);
+      // Mark the arrangement as custom in local state so the buttons +
+      // any dependent UI flip immediately, then refetch tables so the
+      // canvas re-renders against the cloned set (same shapes /
+      // positions, but new ids — important because subsequent edits
+      // mutate the clones, not the originals).
+      setArrangements(prev => prev.map(a => a.id === updated.id ? { ...a, uses_custom_layout: true } : a));
+      const refreshed = await api.listTables(id, activeArrangement);
+      setTables(refreshed);
+    } catch (err) {
+      console.error("Failed to enable custom layout:", err);
+    }
+  };
+
+  const handleResetLayout = async () => {
+    if (!activeArrangement) return;
+    if (!window.confirm(
+      "Reset this schedule item to the event's shared layout? Any custom tables you've added here will be removed and you'll need to re-seat attendees for this item."
+    )) return;
+    try {
+      const updated = await api.resetLayout(id, activeArrangement);
+      setArrangements(prev => prev.map(a => a.id === updated.id ? { ...a, uses_custom_layout: false, seat_assignments: [] } : a));
+      const refreshed = await api.listTables(id, activeArrangement);
+      setTables(refreshed);
+    } catch (err) {
+      console.error("Failed to reset layout:", err);
     }
   };
 
@@ -460,9 +520,26 @@ export default function EventDetail() {
       }
 
       // Build seat slots per arrangement
-      const arrSlots = allArrangements.map(arr => {
+      // Build seat slots per arrangement using EACH arrangement's own
+      // table set. After the 2026-05-20 custom-layout refactor, a
+      // single event can have arrangements on the shared default
+      // layout AND arrangements that opted into custom clones — we
+      // can't reuse the local `tables` state because that's scoped to
+      // whichever arrangement is currently visible. One round-trip per
+      // arrangement to listTables(arrId) gives us the right set for
+      // each. Fired in parallel so wall-clock stays roughly O(1) in
+      // the number of arrangements.
+      const tableSetsPerArrangement = await Promise.all(
+        allArrangements.map(arr =>
+          api.listTables(id, arr.id).catch(err => {
+            console.error(`Failed to load tables for arrangement ${arr.id}`, err);
+            return [] as Table[];
+          }),
+        ),
+      );
+      const arrSlots = allArrangements.map((arr, idx) => {
         const slots: { tableId: number; seatNum: number }[] = [];
-        for (const table of tables) {
+        for (const table of tableSetsPerArrangement[idx]) {
           for (let sn = 1; sn <= table.capacity; sn++) {
             slots.push({ tableId: table.id, seatNum: sn });
           }
@@ -1074,6 +1151,39 @@ export default function EventDetail() {
                 />
                 <span>Maximize Conversation</span>
               </label>
+              {/* Custom-layout toggle. Default behavior: every schedule
+                  item shares the same table layout. Click "Use a
+                  different layout" to opt THIS arrangement out of the
+                  shared layout — its tables become a local clone, edits
+                  diverge from the others. "Reset to event default"
+                  reverses the opt-in (tables for this arrangement get
+                  deleted + the user re-seats from the shared layout). */}
+              {(() => {
+                const currentArr = arrangements.find(a => a.id === activeArrangement);
+                if (!currentArr) return null;
+                if (currentArr.uses_custom_layout) {
+                  return (
+                    <button
+                      className="btn btn-sm"
+                      onClick={handleResetLayout}
+                      title="Discard this schedule item's custom tables and go back to the shared event layout."
+                      style={{ height: 36, whiteSpace: "nowrap" }}
+                    >
+                      ↺ Reset to event default
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    className="btn btn-sm"
+                    onClick={handleUseCustomLayout}
+                    title="Edits to tables in this schedule item will no longer affect the others."
+                    style={{ height: 36, whiteSpace: "nowrap" }}
+                  >
+                    ⎘ Use a different layout
+                  </button>
+                );
+              })()}
             </div>
 
             <div className="table-controls">

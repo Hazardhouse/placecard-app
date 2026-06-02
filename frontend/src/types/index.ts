@@ -58,6 +58,11 @@ export interface SeatingArrangement {
   id: number;
   event_id: number;
   name: string;
+  // True once the user has opted this arrangement out of the shared
+  // event-default table layout. Drives the Seating tab's button
+  // label and decides whether the canvas reads from the event-default
+  // tables or this arrangement's own clones.
+  uses_custom_layout: boolean;
   created_at: string;
   seat_assignments: SeatAssignment[];
 }

@@ -415,10 +415,33 @@ export default function SeatingBoard({
   const handleBoardTouchMove = () => {};
   const handleBoardMouseUp = () => {};
 
+  // ── Draw-mode pointer helper ─────────────────────────────────────────
+  // Stage.getPointerPosition() returns coords in the stage CONTAINER's
+  // frame — i.e. raw screen pixels, before the stage's own scale + pan
+  // transforms are applied. Tables, in contrast, are stored at SCENE
+  // coordinates (the untransformed canvas space). With draggable={!drawMode}
+  // a single pan of the stage between drawing tables shifts the two
+  // frames apart, so the second-and-onward tables landed top-left
+  // regardless of where the user clicked.
+  //
+  // Inverting the stage's absolute transform converts the container
+  // pointer back into scene coords, which is what setDrawStart /
+  // setDrawCurrent need.
+  const scenePointer = (): { x: number; y: number } | null => {
+    const stage = stageRef.current;
+    if (!stage) return null;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return null;
+    const transform = stage.getAbsoluteTransform().copy();
+    transform.invert();
+    return transform.point(pointer);
+  };
+
   // Draw mode handlers
   const handleStageMouseDown = () => {
     if (!drawMode) return;
-    const pos = stageRef.current!.getPointerPosition()!;
+    const pos = scenePointer();
+    if (!pos) return;
     setDrawing(true);
     setDrawStart(pos);
     setDrawCurrent(pos);
@@ -426,7 +449,8 @@ export default function SeatingBoard({
 
   const handleStageMouseMove = () => {
     if (!drawMode || !drawing) return;
-    const pos = stageRef.current!.getPointerPosition()!;
+    const pos = scenePointer();
+    if (!pos) return;
     setDrawCurrent(pos);
   };
 

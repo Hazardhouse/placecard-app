@@ -30,19 +30,94 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
+// Strip every non-alphanumeric character and lowercase — turns
+// "First Name", "FIRST_NAME", "first-name", "firstname" all into
+// the same key "firstname" so a single candidate list catches every
+// common header variation a real-world spreadsheet might use.
+function normHeader(h: string): string {
+  return h.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Walk a list of header candidates against the (already-normalized)
+// row and return the first non-empty value found. Order matters —
+// list the most-likely / canonical headers first.
+function pickField(row: Record<string, string>, candidates: string[]): string {
+  for (const c of candidates) {
+    const v = row[c];
+    if (v != null && v !== "") return v;
+  }
+  return "";
+}
+
 // Map a row of {column_header → value} into an Attendee partial.
-// Shared between CSV and XLSX paths so column-name conventions stay identical.
-function rowToAttendee(row: Record<string, string>): Partial<Attendee> | null {
-  const name = row["name"] || row["full name"] || row["full_name"] || "";
+// Shared between CSV / XLSX / PDF paths so the column-name heuristics
+// stay identical regardless of source format. The header keys handed
+// in can be in any case / punctuation — normHeader collapses them.
+function rowToAttendee(rawRow: Record<string, string>): Partial<Attendee> | null {
+  // Re-key the row using the normalized header form so the candidate
+  // lists below can match without worrying about case / spaces /
+  // underscores / dashes. Trim values along the way.
+  const row: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rawRow)) {
+    row[normHeader(k)] = String(v ?? "").trim();
+  }
+
+  // Name resolution. Single-column first (most common), then
+  // First+Last fallback (split-column exports from CRMs / Eventbrite /
+  // Mailchimp / Gmail contacts).
+  let name = pickField(row, [
+    "name", "fullname", "guestname", "attendeename", "personname",
+    "displayname", "guest", "attendee", "person", "contact", "contactname",
+  ]);
+  if (!name) {
+    const first = pickField(row, [
+      "firstname", "givenname", "first", "fname", "forename",
+    ]);
+    const last = pickField(row, [
+      "lastname", "surname", "familyname", "last", "lname",
+    ]);
+    if (first || last) {
+      name = [first, last].filter(Boolean).join(" ").trim();
+    }
+  }
   if (!name) return null;
+
+  const email = pickField(row, [
+    "email", "emailaddress", "mail", "emailid", "primaryemail",
+  ]) || null;
+
+  const phone = pickField(row, [
+    "phone", "phonenumber", "tel", "telephone", "mobile", "mobilenumber",
+    "cell", "cellphone", "contactnumber",
+  ]) || null;
+
+  const country = pickField(row, [
+    "country", "countryregion", "nation", "region",
+  ]) || null;
+
+  const dietary = pickField(row, [
+    "dietary", "dietaryrequirements", "dietaryneeds", "dietaryrestrictions",
+    "diet", "allergies", "foodallergies", "restrictions", "specialdiet",
+    "specialrequests", "specialrequirements",
+  ]) || null;
+
+  const notes = pickField(row, [
+    "notes", "note", "comments", "comment", "remarks", "message",
+  ]) || null;
+
+  const rsvpRaw = pickField(row, [
+    "rsvp", "rsvpstatus", "status", "response", "attendance",
+  ]);
+  const rsvp = rsvpRaw ? rsvpRaw.toLowerCase() : "pending";
+
   return {
     name,
-    email: row["email"] || row["email address"] || null,
-    phone: row["phone"] || row["phone number"] || null,
-    country: row["country"] || null,
-    dietary_requirements: row["dietary"] || row["dietary requirements"] || row["dietary_requirements"] || null,
-    notes: row["notes"] || null,
-    rsvp_status: (row["rsvp"] || row["rsvp_status"] || row["status"] || "pending").toLowerCase(),
+    email,
+    phone,
+    country,
+    dietary_requirements: dietary,
+    notes,
+    rsvp_status: rsvp,
   };
 }
 
@@ -160,7 +235,14 @@ export default function AttendeeList({ attendees, onAdd, onDelete, onEdit, seate
           ? await parseAttendeeExcel(file)
           : parseAttendeeCSV(await file.text());
       if (rows.length === 0) {
-        setUploadMsg(`No valid rows found. ${fileLabel} needs a 'name' column.`);
+        // We try every common name-column variant (Name, Full Name,
+        // Guest, Attendee, First Name + Last Name, …) — if NONE matched,
+        // the file genuinely doesn't have a column we can identify as
+        // a person. Tell the user the shapes we look for so they can
+        // rename a column to match without guessing.
+        setUploadMsg(
+          `No attendees found in your ${fileLabel} file. We look for a column called Name, Full Name, Guest, Attendee, or a pair of First Name + Last Name. Rename a column to match and try again.`,
+        );
         return;
       }
       let imported = 0;

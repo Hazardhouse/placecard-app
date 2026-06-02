@@ -38,16 +38,56 @@ function normHeader(h: string): string {
   return h.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-// Walk a list of header candidates against the (already-normalized)
-// row and return the first non-empty value found. Order matters —
-// list the most-likely / canonical headers first.
-function pickField(row: Record<string, string>, candidates: string[]): string {
+// Lowercase + split on any non-alphanumeric character. Turns
+// "What is your name?" into Set{"what","is","your","name"} so a
+// candidate like "name" matches even when the question header buries
+// the keyword in natural-language phrasing (Google Forms exports,
+// Typeform CSVs, etc.).
+function tokenize(h: string): Set<string> {
+  return new Set(h.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+}
+
+// Walk a row twice:
+//   1. EXACT compact match against `candidates` — fast, lossless for
+//      headers like "Email" / "Full Name" / "first_name" that compact
+//      cleanly to a known token.
+//   2. TOKEN fallback — for natural-language headers ("What is your
+//      email address?"), accept any column whose tokenized form
+//      contains any candidate AND none of `excludeTokens`. The
+//      exclude list is how the full-name lookup avoids stealing
+//      "First Name" / "Last Name" — those columns contain the word
+//      "name" too but belong to the first/last buckets.
+function pickField(
+  row: Record<string, string>,
+  rowTokens: Record<string, Set<string>>,
+  candidates: string[],
+  excludeTokens: string[] = [],
+): string {
+  // Pass 1 — exact compact match.
   for (const c of candidates) {
     const v = row[c];
     if (v != null && v !== "") return v;
   }
+  // Pass 2 — any header whose tokens contain a candidate keyword.
+  for (const [key, value] of Object.entries(row)) {
+    if (!value) continue;
+    const tokens = rowTokens[key];
+    if (!tokens) continue;
+    if (excludeTokens.some(e => tokens.has(e))) continue;
+    if (candidates.some(c => tokens.has(c))) return value;
+  }
   return "";
 }
+
+// Tokens that, when present in a header, mark the column as a NAME
+// PART (first / last / etc) rather than a full-name column. The
+// full-name lookup excludes these so "First Name" / "Last Name" don't
+// accidentally claim the full-name slot just because they also
+// contain the word "name".
+const NAME_PART_TOKENS = [
+  "first", "given", "forename", "fname",
+  "last", "sur", "surname", "family", "lname",
+];
 
 // Map a row of {column_header → value} into an Attendee partial.
 // Shared between CSV / XLSX / PDF paths so the column-name heuristics
@@ -56,24 +96,37 @@ function pickField(row: Record<string, string>, candidates: string[]): string {
 function rowToAttendee(rawRow: Record<string, string>): Partial<Attendee> | null {
   // Re-key the row using the normalized header form so the candidate
   // lists below can match without worrying about case / spaces /
-  // underscores / dashes. Trim values along the way.
+  // underscores / dashes. Trim values along the way. Parallel-key the
+  // token set off the ORIGINAL header (before compacting) so multi-
+  // word headers like "What is your name?" still tokenize cleanly.
   const row: Record<string, string> = {};
+  const rowTokens: Record<string, Set<string>> = {};
   for (const [k, v] of Object.entries(rawRow)) {
-    row[normHeader(k)] = String(v ?? "").trim();
+    const compact = normHeader(k);
+    row[compact] = String(v ?? "").trim();
+    rowTokens[compact] = tokenize(k);
   }
 
-  // Name resolution. Single-column first (most common), then
-  // First+Last fallback (split-column exports from CRMs / Eventbrite /
-  // Mailchimp / Gmail contacts).
-  let name = pickField(row, [
-    "name", "fullname", "guestname", "attendeename", "personname",
-    "displayname", "guest", "attendee", "person", "contact", "contactname",
-  ]);
+  // Name resolution. Three-layer cascade:
+  //   1. Exact / compact match for canonical full-name headers.
+  //   2. First + Last split-column fallback (very common in CRM /
+  //      Eventbrite / Mailchimp / Gmail-contacts exports).
+  //   3. Token-based fallback for natural-language headers like
+  //      "What is your name?" (Google Forms). Guarded by
+  //      NAME_PART_TOKENS so it doesn't poach the first / last
+  //      columns instead.
+  let name = pickField(row, rowTokens,
+    [
+      "name", "fullname", "guestname", "attendeename", "personname",
+      "displayname", "guest", "attendee", "person", "contact", "contactname",
+    ],
+    NAME_PART_TOKENS,
+  );
   if (!name) {
-    const first = pickField(row, [
+    const first = pickField(row, rowTokens, [
       "firstname", "givenname", "first", "fname", "forename",
     ]);
-    const last = pickField(row, [
+    const last = pickField(row, rowTokens, [
       "lastname", "surname", "familyname", "last", "lname",
     ]);
     if (first || last) {
@@ -82,30 +135,30 @@ function rowToAttendee(rawRow: Record<string, string>): Partial<Attendee> | null
   }
   if (!name) return null;
 
-  const email = pickField(row, [
+  const email = pickField(row, rowTokens, [
     "email", "emailaddress", "mail", "emailid", "primaryemail",
   ]) || null;
 
-  const phone = pickField(row, [
+  const phone = pickField(row, rowTokens, [
     "phone", "phonenumber", "tel", "telephone", "mobile", "mobilenumber",
     "cell", "cellphone", "contactnumber",
   ]) || null;
 
-  const country = pickField(row, [
+  const country = pickField(row, rowTokens, [
     "country", "countryregion", "nation", "region",
   ]) || null;
 
-  const dietary = pickField(row, [
+  const dietary = pickField(row, rowTokens, [
     "dietary", "dietaryrequirements", "dietaryneeds", "dietaryrestrictions",
     "diet", "allergies", "foodallergies", "restrictions", "specialdiet",
     "specialrequests", "specialrequirements",
   ]) || null;
 
-  const notes = pickField(row, [
+  const notes = pickField(row, rowTokens, [
     "notes", "note", "comments", "comment", "remarks", "message",
   ]) || null;
 
-  const rsvpRaw = pickField(row, [
+  const rsvpRaw = pickField(row, rowTokens, [
     "rsvp", "rsvpstatus", "status", "response", "attendance",
   ]);
   const rsvp = rsvpRaw ? rsvpRaw.toLowerCase() : "pending";

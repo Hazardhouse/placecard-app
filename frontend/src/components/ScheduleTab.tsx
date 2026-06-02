@@ -116,10 +116,32 @@ function formatTimeDisplay(value: string): string {
   return `${hour12}:${mStr} ${ampm}`;
 }
 
-function TimePicker({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+function TimePicker({
+  value,
+  onChange,
+  placeholder,
+  minTime,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  // Optional lower bound — entries earlier than this are hidden.
+  // Used by the End Time picker to suppress slots before the Start
+  // Time the user already chose ("HH:MM" 24-hour format). Strictly
+  // greater-than so the user can't pick the same instant as Start.
+  minTime?: string;
+}) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Filter the option list against the optional minTime bound. Done
+  // per-render rather than memoised because (a) TIME_OPTIONS is only
+  // 96 entries and (b) minTime changes whenever the user changes the
+  // Start Time, which would invalidate any memo anyway.
+  const visibleOptions = minTime
+    ? TIME_OPTIONS.filter(o => o.value > minTime)
+    : TIME_OPTIONS;
 
   // Close on outside click
   useEffect(() => {
@@ -136,13 +158,13 @@ function TimePicker({ value, onChange, placeholder }: { value: string; onChange:
   // Scroll to selected value when opening
   useEffect(() => {
     if (open && listRef.current && value) {
-      const idx = TIME_OPTIONS.findIndex(o => o.value === value);
+      const idx = visibleOptions.findIndex(o => o.value === value);
       if (idx >= 0) {
         const item = listRef.current.children[idx] as HTMLElement;
         if (item) item.scrollIntoView({ block: "center" });
       }
     }
-  }, [open, value]);
+  }, [open, value, visibleOptions]);
 
   return (
     <div className="time-picker-wrap" ref={wrapRef}>
@@ -156,7 +178,7 @@ function TimePicker({ value, onChange, placeholder }: { value: string; onChange:
       </button>
       {open && (
         <div className="time-picker-dropdown" ref={listRef}>
-          {TIME_OPTIONS.map(opt => (
+          {visibleOptions.map(opt => (
             <button
               key={opt.value}
               type="button"
@@ -767,11 +789,31 @@ export default function ScheduleTab({ eventId, items, onItemsChange, eventStartD
           <div className="form-row">
             <div className="form-group">
               <label>Start Time</label>
-              <TimePicker value={form.start_hour} onChange={v => set("start_hour", v)} placeholder="Start" />
+              <TimePicker
+                value={form.start_hour}
+                onChange={v => {
+                  // If the user moves Start past the currently-chosen
+                  // End, blank End out so they don't end up with an
+                  // impossible "ends before it starts" pairing on save.
+                  setForm(f => ({
+                    ...f,
+                    start_hour: v,
+                    end_hour: f.end_hour && f.end_hour <= v ? "" : f.end_hour,
+                  }));
+                }}
+                placeholder="Start"
+              />
             </div>
             <div className="form-group">
               <label>End Time</label>
-              <TimePicker value={form.end_hour} onChange={v => set("end_hour", v)} placeholder="End" />
+              <TimePicker
+                value={form.end_hour}
+                onChange={v => set("end_hour", v)}
+                placeholder="End"
+                // Hide slots ≤ Start so the dropdown can't offer an
+                // end earlier than (or equal to) the start.
+                minTime={form.start_hour || undefined}
+              />
             </div>
           </div>
           <div className="form-group">

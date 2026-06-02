@@ -555,33 +555,77 @@ export default function EventDetail() {
         setAutoSeating(false);
       }
     } else {
-      // Simple: just fill empty seats in current arrangement
-      if (!activeArrangement) return;
-      const arr = arrangements.find(a => a.id === activeArrangement);
-      if (!arr) return;
-      const seated = new Set(arr.seat_assignments.map(sa => sa.attendee_id));
+      // Simple branch: fill empty seats in the active arrangement only.
+      // Refresh from server first so stale local state (e.g. a recently
+      // created arrangement that didn't make it into local `arrangements`
+      // yet, or removed-server-side assignments) doesn't cause the
+      // function to silently no-op via the early returns below.
+      let freshArr;
+      try {
+        const allArrangements = await api.listArrangements(id);
+        // Prefer the active arrangement; fall back to the first one if
+        // activeArrangement is null / stale. Matching maximize's
+        // "always do something" posture instead of returning silently.
+        freshArr = allArrangements.find(a => a.id === activeArrangement)
+          ?? allArrangements[0];
+      } catch (err) {
+        console.error("Auto-Seat: failed to refresh arrangements", err);
+        return;
+      }
+      if (!freshArr) {
+        console.warn("Auto-Seat: no arrangements exist for this event yet.");
+        return;
+      }
+      // If the user landed here via the dropdown but local
+      // activeArrangement is stale, sync it before we mutate.
+      if (freshArr.id !== activeArrangement) {
+        setActiveArrangement(freshArr.id);
+      }
+
+      const seated = new Set(freshArr.seat_assignments.map(sa => sa.attendee_id));
       const unseated = attendees.filter(a => !seated.has(a.id));
-      if (unseated.length === 0) return;
+      if (unseated.length === 0) {
+        console.info("Auto-Seat: everyone is already seated in this arrangement.");
+        return;
+      }
 
       const emptySeats: { tableId: number; seatNum: number }[] = [];
       for (const table of tables) {
         for (let sn = 1; sn <= table.capacity; sn++) {
-          if (!arr.seat_assignments.some(sa => sa.table_id === table.id && sa.seat_number === sn)) {
+          if (!freshArr.seat_assignments.some(sa => sa.table_id === table.id && sa.seat_number === sn)) {
             emptySeats.push({ tableId: table.id, seatNum: sn });
           }
         }
       }
-
-      let updatedArr = { ...arr };
-      for (let i = 0; i < Math.min(unseated.length, emptySeats.length); i++) {
-        const assignment = await api.assignSeat(id, activeArrangement, {
-          attendee_id: unseated[i].id,
-          table_id: emptySeats[i].tableId,
-          seat_number: emptySeats[i].seatNum,
-        });
-        updatedArr = { ...updatedArr, seat_assignments: [...updatedArr.seat_assignments, assignment] };
+      if (emptySeats.length === 0) {
+        console.warn("Auto-Seat: no empty seats — every table is full.");
+        return;
       }
-      setArrangements(prev => prev.map(a => a.id === activeArrangement ? updatedArr : a));
+
+      // Each successful API call appends to the in-flight copy. Wrap
+      // each in its own try/catch so one rejection (e.g. transient 5xx)
+      // doesn't kill the whole batch and leave the user with a partial
+      // half-seated state and no visible feedback. Logged loudly.
+      let updatedArr = { ...freshArr };
+      let placed = 0;
+      for (let i = 0; i < Math.min(unseated.length, emptySeats.length); i++) {
+        try {
+          const assignment = await api.assignSeat(id, freshArr.id, {
+            attendee_id: unseated[i].id,
+            table_id: emptySeats[i].tableId,
+            seat_number: emptySeats[i].seatNum,
+          });
+          updatedArr = { ...updatedArr, seat_assignments: [...updatedArr.seat_assignments, assignment] };
+          placed++;
+        } catch (err) {
+          console.error(
+            `Auto-Seat: failed to seat ${unseated[i].name} at table ${emptySeats[i].tableId}/${emptySeats[i].seatNum}`,
+            err,
+          );
+        }
+      }
+      setArrangements(prev => prev.map(a => a.id === freshArr.id ? updatedArr : a));
+      console.info(`Auto-Seat: placed ${placed} of ${unseated.length} attendees.`);
     }
   };
 

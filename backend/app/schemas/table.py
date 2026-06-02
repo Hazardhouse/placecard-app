@@ -28,6 +28,11 @@ class TableUpdate(BaseModel):
 class TableResponse(BaseModel):
     id: int
     event_id: int
+    # NULL = event-default table (the shared layout). Non-NULL =
+    # custom-layout clone scoped to one arrangement. The frontend
+    # mostly doesn't care which it is — the GET endpoint already
+    # filters by scope — but exposing it makes debugging easier.
+    arrangement_id: Optional[int] = None
     name: str
     shape: str
     width: float

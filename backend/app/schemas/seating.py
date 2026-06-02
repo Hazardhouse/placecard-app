@@ -37,6 +37,11 @@ class SeatingArrangementResponse(BaseModel):
     id: int
     event_id: int
     name: str
+    # True once the user has clicked "Use a different layout for this
+    # schedule item" — drives the Seating tab's button label and
+    # decides whether the canvas reads event-default tables or
+    # arrangement-scoped clones.
+    uses_custom_layout: bool = False
     created_at: datetime
     seat_assignments: List[SeatAssignmentResponse] = []
 

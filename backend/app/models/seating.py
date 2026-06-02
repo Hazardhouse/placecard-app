@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -12,6 +12,14 @@ class SeatingArrangement(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
     name: Mapped[str] = mapped_column(String(255))
+    # Flips to True when the user opts THIS arrangement out of the
+    # shared event-default table layout via the Seating tab's
+    # "Use a different layout for this schedule item" button. While
+    # False (the default), the canvas reads from tables where
+    # arrangement_id IS NULL. While True, tables where
+    # arrangement_id == this.id are shown — those tables started as
+    # a clone of the event defaults at opt-in time.
+    uses_custom_layout: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     event = relationship("Event", back_populates="seating_arrangements")

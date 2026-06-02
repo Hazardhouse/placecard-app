@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 interface DatePickerProps {
   value: string;                       // ISO date string YYYY-MM-DD or ""
@@ -68,9 +68,27 @@ export default function DatePicker({
   const [viewMonth, setViewMonth] = useState<Date>(startOfMonth(initial));
   const [slideDir, setSlideDir] = useState<"up" | "down" | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const wheelLockRef = useRef(false);
   const minDateObj = parseYmd(minDate ?? "");
   const selectedObj = parseYmd(value);
+
+  // When the trigger sits near the right edge of the viewport (e.g.
+  // the End Date field inside the EventDrawer slide-out), opening the
+  // popover with default `left: 0` overflows past the drawer. On open
+  // we measure the wrap's position and flip to `right: 0` when the
+  // popover would otherwise clip. 280px is the .dp-popover width; the
+  // 16px margin matches the standard drawer / viewport padding.
+  const [alignRight, setAlignRight] = useState(false);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    const POPOVER_WIDTH = 280;
+    const RIGHT_MARGIN = 16;
+    setAlignRight(rect.left + POPOVER_WIDTH > window.innerWidth - RIGHT_MARGIN);
+  }, [open]);
 
   // When opening, snap the visible month to the selected date (or min date)
   useEffect(() => {
@@ -137,7 +155,7 @@ export default function DatePicker({
   const todayYmd = ymd(new Date());
 
   return (
-    <div className="dp-wrap">
+    <div className="dp-wrap" ref={wrapRef}>
       <button
         type="button"
         className={`dp-trigger ${open ? "dp-trigger-open" : ""}`}
@@ -158,7 +176,7 @@ export default function DatePicker({
       </button>
 
       {open && (
-        <div ref={popoverRef} className="dp-popover" onWheel={handleWheel} role="dialog">
+        <div ref={popoverRef} className={`dp-popover ${alignRight ? "dp-popover-right" : ""}`} onWheel={handleWheel} role="dialog">
           <div className="dp-header">
             <button
               type="button"

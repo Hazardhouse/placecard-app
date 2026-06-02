@@ -7644,6 +7644,15 @@ select:focus {
   overflow: hidden;
   animation: dp-popover-in 0.18s ease-out;
 }
+
+/* Right-aligned variant — applied by DatePicker when the trigger sits
+   close enough to the right edge that the 280px popover would clip
+   past the viewport (e.g. End Date inside the right-side EventDrawer).
+   Flips the anchor so the popover extends LEFT from the trigger. */
+.dp-popover-right {
+  left: auto;
+  right: 0;
+}
 @keyframes dp-popover-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }

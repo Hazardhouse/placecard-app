@@ -324,6 +324,17 @@ export default function ScheduleTab({ eventId, items, onItemsChange, eventStartD
     return null;
   })();
   const [showForm, setShowForm] = useState(false);
+  // Drawer-form scroll container. We pin scrollTop to 0 whenever the
+  // drawer opens so the user always lands on the Title field — without
+  // this reset the browser carries the previous scroll position from
+  // the last edit / open, which buried Title + Description below the
+  // fold on subsequent opens.
+  const drawerFormRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (showForm && drawerFormRef.current) {
+      drawerFormRef.current.scrollTop = 0;
+    }
+  }, [showForm]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
@@ -716,7 +727,7 @@ export default function ScheduleTab({ eventId, items, onItemsChange, eventStartD
           </span>
           <button className="schedule-drawer-close" onClick={() => { setShowForm(false); setEditingId(null); }}>✕</button>
         </div>
-        <form className="schedule-drawer-form" onSubmit={handleSave}>
+        <form className="schedule-drawer-form" onSubmit={handleSave} ref={drawerFormRef}>
           {editingId && (() => {
             const item = items.find(i => i.id === editingId);
             return item?.assigned_to ? (

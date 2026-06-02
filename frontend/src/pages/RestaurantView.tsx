@@ -4,10 +4,102 @@ import { api } from "../api/client";
 import logoSvg from "../assets/placecard-logo.svg";
 
 
+// ── Seat layout helpers — mirror frontend/src/components/SeatingBoard.tsx ──
+// Kept independent (rather than imported from SeatingBoard) because this
+// view is server-rendered by people who don't have the SeatingBoard
+// dependencies loaded (Konva). Pure math, no React/Konva imports.
+const SEAT_SPACING = 52;
+const CHAIR_SPACING = 56;
+
+function rectSeatLayout(capacity: number, width: number, height: number): { top: number; bottom: number; left: number; right: number } {
+  const hFit = Math.max(1, Math.floor(width / SEAT_SPACING));
+  const vFit = Math.max(1, Math.floor(height / SEAT_SPACING));
+  const perimeter = 2 * (hFit + vFit);
+  if (capacity <= 0) return { top: 0, bottom: 0, left: 0, right: 0 };
+  const ratio = capacity / perimeter;
+  let top = Math.round(hFit * ratio);
+  let bottom = Math.round(hFit * ratio);
+  let left = Math.round(vFit * ratio);
+  let right = Math.round(vFit * ratio);
+  let total = top + bottom + left + right;
+  while (total < capacity) {
+    if (top <= bottom && top < hFit) top++;
+    else if (bottom < hFit) bottom++;
+    else if (left <= right && left < vFit) left++;
+    else right++;
+    total++;
+  }
+  while (total > capacity) {
+    if (right > 0 && right >= left) right--;
+    else if (left > 0) left--;
+    else if (bottom > 0 && bottom >= top) bottom--;
+    else top--;
+    total--;
+  }
+  return { top, bottom, left, right };
+}
+
+function getSeatPositions(shape: string, width: number, height: number, capacity: number): { x: number; y: number }[] {
+  const seats: { x: number; y: number }[] = [];
+  const cx = width / 2;
+  const cy = height / 2;
+
+  if (shape === "chair-row") {
+    const cols = Math.max(1, Math.floor(width / CHAIR_SPACING));
+    const rows = Math.max(1, Math.floor(height / CHAIR_SPACING));
+    let placed = 0;
+    for (let r = 0; r < rows && placed < capacity; r++) {
+      for (let c = 0; c < cols && placed < capacity; c++) {
+        seats.push({
+          x: (c + 0.5) * (width / cols),
+          y: (r + 0.5) * (height / rows),
+        });
+        placed++;
+      }
+    }
+    return seats;
+  }
+
+  if (shape === "round" || shape === "oval") {
+    const rx = width / 2 + 30;
+    const ry = shape === "oval" ? height / 2 + 30 : rx;
+    for (let i = 0; i < capacity; i++) {
+      const angle = (2 * Math.PI * i) / capacity - Math.PI / 2;
+      seats.push({ x: cx + rx * Math.cos(angle), y: cy + ry * Math.sin(angle) });
+    }
+    return seats;
+  }
+
+  const layout = rectSeatLayout(capacity, width, height);
+  const offset = 32;
+  for (let j = 0; j < layout.top; j++) {
+    const t = (j + 0.5) / layout.top;
+    seats.push({ x: t * width, y: -offset });
+  }
+  for (let j = 0; j < layout.bottom; j++) {
+    const t = (j + 0.5) / layout.bottom;
+    seats.push({ x: t * width, y: height + offset });
+  }
+  for (let j = 0; j < layout.right; j++) {
+    const t = (j + 0.5) / layout.right;
+    seats.push({ x: width + offset, y: t * height });
+  }
+  for (let j = 0; j < layout.left; j++) {
+    const t = (j + 0.5) / layout.left;
+    seats.push({ x: -offset, y: t * height });
+  }
+  return seats;
+}
+
+function firstName(full: string): string {
+  return full.split(" ")[0];
+}
+
 // Render a scaled SVG floor plan that mirrors the SeatingBoard the organizer
 // arranged. Same coordinate space (pixels, top-left origin) — we just compute
 // the bounding box across all tables, add padding, and let SVG viewBox handle
-// the scale-to-fit.
+// the scale-to-fit. Each table draws its surrounding seat ring with the
+// assigned attendee's first name underneath each seat.
 function FloorPlan({ tables }: { tables: SeatingTable[] }) {
   const layout = useMemo(() => {
     if (tables.length === 0) return null;
@@ -18,7 +110,12 @@ function FloorPlan({ tables }: { tables: SeatingTable[] }) {
       maxX = Math.max(maxX, t.x_position + (t.width || 120));
       maxY = Math.max(maxY, t.y_position + (t.height || 120));
     }
-    const padding = 60;
+    // Seats sit outside the table footprint (~30px radial offset for
+    // round/oval, ~32px straight offset for rectangular) and the
+    // first-name label drops another ~20px below the seat circle.
+    // Bump padding from 60 → 110 so the outermost seats + labels
+    // don't clip at the SVG edges.
+    const padding = 110;
     const viewX = minX - padding;
     const viewY = minY - padding;
     const viewW = (maxX - minX) + padding * 2;
@@ -96,6 +193,54 @@ function FloorPlan({ tables }: { tables: SeatingTable[] }) {
                 >
                   {seated} / {cap}
                 </text>
+                {/* Seat ring — one dot per seat in the same positions
+                    the organizer's SeatingBoard draws them. Occupied
+                    seats show the guest's first name below. Empty
+                    seats render as a light gray circle so the operator
+                    / printer can tell at a glance how full the table
+                    is and which spots are unfilled. */}
+                {(() => {
+                  const positions = getSeatPositions(
+                    (t.shape || "round").toLowerCase(),
+                    t.width || 120,
+                    t.height || 120,
+                    t.capacity || 0,
+                  );
+                  return positions.map((pos, idx) => {
+                    const seat = t.seats.find(s => s.seat_number === idx + 1);
+                    const name = seat?.attendee_name ?? "";
+                    const dietary = seat?.dietary ?? "";
+                    const seatX = t.x_position + pos.x;
+                    const seatY = t.y_position + pos.y;
+                    const fill = name
+                      ? (dietary ? "#16a34a" : "#1b4fff")
+                      : "#e2e8f0";
+                    return (
+                      <g key={idx}>
+                        <circle
+                          cx={seatX}
+                          cy={seatY}
+                          r={14}
+                          fill={fill}
+                          stroke="#ffffff"
+                          strokeWidth="2"
+                        />
+                        {name && (
+                          <text
+                            x={seatX}
+                            y={seatY + 30}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            fontSize="11"
+                            fill="#1e293b"
+                          >
+                            {firstName(name)}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  });
+                })()}
               </g>
             );
           })}

@@ -8623,3 +8623,113 @@ body.on-app-page .app-header::after {
 .salon-header-text {
   padding: 0 4px;
 }
+
+/* ── Post-purchase confirmation page ──────────────────────────────
+   /orders/:orderId/success — reached only after a successful print
+   order. Doubles as the URL Google Ads' conversion tracker watches. */
+.order-success-page {
+  min-height: calc(100vh - 80px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 20px;
+}
+
+.order-success-card {
+  width: 100%;
+  max-width: 520px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+  padding: 40px 32px;
+  text-align: center;
+}
+
+.order-success-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  border-radius: 50%;
+  background: #16a34a;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.order-success-icon-pending {
+  background: #f59e0b;
+  font-size: 28px;
+}
+
+.order-success-card h1 {
+  margin: 0 0 12px;
+  font-size: 24px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.order-success-subhead {
+  margin: 0 0 28px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.order-success-summary {
+  text-align: left;
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 24px;
+}
+
+.order-success-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+  font-size: 14px;
+  color: #475569;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.order-success-row:last-child { border-bottom: none; }
+
+.order-success-row strong {
+  color: #0f172a;
+  font-weight: 600;
+  text-align: right;
+}
+
+.order-success-note {
+  margin: 0 0 24px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #64748b;
+  background: #eff6ff;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.order-success-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.order-success-loading {
+  color: #64748b;
+  font-size: 14px;
+  padding: 24px 0;
+}
+
+.order-success-error {
+  color: #dc2626;
+  font-size: 14px;
+  margin: 16px 0 24px;
+}

@@ -13,6 +13,7 @@
  * attendee CSV attached.
  */
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
@@ -94,6 +95,7 @@ export default function PrintCheckoutModal({
   onClose,
 }: Props) {
   const { user: authUser, myProfile } = useAuth();
+  const navigate = useNavigate();
   const [step, setStep] = useState<Step>("options");
   // Rush is intentionally removed for the launch window — UK printer
   // doesn't offer next-day. Pricing table still carries per-tier rush
@@ -583,7 +585,23 @@ export default function PrintCheckoutModal({
                 currency={currency}
                 breakdown={breakdown}
                 removeBranding={removeBranding}
-                onSuccess={() => setStep("success")}
+                onSuccess={() => {
+                  // Navigate to the dedicated confirmation route
+                  // instead of switching to an internal modal step.
+                  // The unique URL is what Google Ads' URL-based
+                  // conversion tracker keys on; staying in-modal
+                  // wouldn't change the URL and wouldn't fire the
+                  // conversion. Modal unmounts via the route
+                  // transition — no need for onClose().
+                  if (orderId) {
+                    navigate(`/orders/${orderId}/success`);
+                  } else {
+                    // Defensive: if orderId somehow missing, fall
+                    // back to the old in-modal success step rather
+                    // than navigating to /orders/undefined/success.
+                    setStep("success");
+                  }
+                }}
                 onError={(msg) => setError(msg)}
               />
             </Elements>

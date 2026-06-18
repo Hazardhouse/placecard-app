@@ -4,6 +4,7 @@ import EventList from "./pages/EventList";
 import EventDetail from "./pages/EventDetail";
 import AttendeeDetail from "./pages/AttendeeDetail";
 import AccountPage from "./pages/AccountPage";
+import OrderSuccessPage from "./pages/OrderSuccessPage";
 import LoginPage from "./pages/LoginPage";
 import PublicForm from "./pages/PublicForm";
 import RestaurantView from "./pages/RestaurantView";
@@ -192,6 +193,15 @@ function ProtectedLayout() {
           <Route path="/events/:eventId/attendees/:attendeeId" element={<AttendeeDetail />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="/account/:section" element={<AccountPage />} />
+          {/* Post-purchase confirmation page. Unique URL per order,
+              reached ONLY after a successful print-order payment.
+              Used by the Google Ads URL-based conversion tracker —
+              the campaign config points at /orders/*​/success as the
+              purchase signal. The page itself fetches the order via
+              the authenticated API and shows a summary; gtag fire
+              for the Ads conversion lives inside the page once it
+              confirms status === "paid". */}
+          <Route path="/orders/:orderId/success" element={<OrderSuccessPage />} />
           <Route path="/login" element={<PostAuthLanding />} />
           {/* Marketing CTAs link unauthenticated visitors to /signup
               (LoginPage opens in signup mode). Once they're in, that

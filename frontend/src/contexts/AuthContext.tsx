@@ -14,6 +14,10 @@ interface AuthState {
   refreshMyProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, name: string) => Promise<{ error: Error | null }>;
+  // Passwordless: sends a one-tap magic link to the user's email.
+  // Handles both new users (creates account on first click) AND returning
+  // users (sends a sign-in link). Supabase makes it one call.
+  signInWithMagicLink: (email: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   updateUser: (updates: { name?: string; email?: string; password?: string }) => Promise<{ error: Error | null }>;
 }
@@ -85,6 +89,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error as Error | null };
   };
 
+  const signInWithMagicLink = async (email: string) => {
+    // shouldCreateUser=true lets Supabase auto-create the account on
+    // first click if the email isn't yet a user — one call, one code
+    // path for both new signups and returning logins.
+    // emailRedirectTo pins the landing URL so the click resolves back
+    // to the app root; Supabase's client library then parses the
+    // access token from the URL and fires SIGNED_IN via onAuthStateChange,
+    // which the existing effect above already handles. No extra
+    // callback route needed.
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: window.location.origin + "/",
+        shouldCreateUser: true,
+      },
+    });
+    return { error: error as Error | null };
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
   };
@@ -99,7 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, myProfile, refreshMyProfile, signIn, signUp, signOut, updateUser }}>
+    <AuthContext.Provider value={{ user, session, loading, myProfile, refreshMyProfile, signIn, signUp, signInWithMagicLink, signOut, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

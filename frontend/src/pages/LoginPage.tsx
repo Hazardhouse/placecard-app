@@ -2,29 +2,68 @@ import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import logoSvg from "../assets/placecard-logo.svg";
 
+/**
+ * Passwordless-first login page.
+ *
+ * Primary flow: user types their email → we send a magic link → they click
+ * it in their inbox → they're signed in. Same code path for new signups
+ * and returning users (Supabase's `signInWithOtp` auto-creates the account
+ * on first click). No password storage, no password reset, no forgotten-
+ * password support tickets.
+ *
+ * Fallback: a small "Use password instead" link at the bottom flips into
+ * the legacy email + password form. Kept alive for anyone who bookmarked
+ * the old flow or who genuinely prefers passwords; new / returning users
+ * default to the magic-link path.
+ *
+ * Callback handling: when the user clicks the email link, Supabase
+ * redirects them back to https://app.placecard-events.app/ with the
+ * access token in the URL hash. The Supabase client library auto-parses
+ * that on load and fires SIGNED_IN via `onAuthStateChange`, which the
+ * AuthProvider already listens to. No dedicated callback route needed.
+ */
 export default function LoginPage() {
-  const { signIn, signUp } = useAuth();
-  // Default to "signup" when the marketing site (or any direct link)
-  // sends a new user to /signup; default to "login" otherwise.
-  const initialMode: "login" | "signup" =
-    typeof window !== "undefined" && window.location.pathname === "/signup"
-      ? "signup"
-      : "login";
-  const [mode, setMode] = useState<"login" | "signup">(initialMode);
+  const { signIn, signUp, signInWithMagicLink } = useAuth();
+
+  // /signup is the marketing-site's "create account" CTA. Land users
+  // there in the same magic-link flow (Supabase creates the user on
+  // first click); the URL just controls the small copy tweak below.
+  const isSignupUrl = typeof window !== "undefined" && window.location.pathname === "/signup";
+
+  const [mode, setMode] = useState<"magic" | "password">("magic");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [signupSuccess, setSignupSuccess] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
+  const [passwordSignupSuccess, setPasswordSignupSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // In the password fallback, still let the user toggle between sign-in
+  // and sign-up (needed because sign-up captures a name for the profile).
+  const [passwordMode, setPasswordMode] = useState<"login" | "signup">(
+    isSignupUrl ? "signup" : "login",
+  );
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    const { error } = await signInWithMagicLink(email);
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    } else {
+      setLinkSent(true);
+      setLoading(false);
+    }
+  };
 
-    if (mode === "login") {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    if (passwordMode === "login") {
       const { error } = await signIn(email, password);
       if (error) setError(error.message);
     } else {
@@ -33,13 +72,42 @@ export default function LoginPage() {
       if (error) {
         setError(error.message);
       } else {
-        setSignupSuccess(true);
+        setPasswordSignupSuccess(true);
       }
     }
     setLoading(false);
   };
 
-  if (signupSuccess) {
+  // Post-magic-link-sent confirmation. Same shape as the old password-
+  // signup success screen so the visual pattern is consistent.
+  if (linkSent) {
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <div className="login-logo"><img src={logoSvg} alt="PlaceCard" className="login-logo-img" /></div>
+          <div className="login-success">
+            <h2>Check your email</h2>
+            <p>
+              We sent a login link to <strong>{email}</strong>. Click the link in
+              your inbox to sign in — it stays valid for one hour. No password
+              needed.
+            </p>
+            <p style={{ fontSize: 13, color: "#94a3b8", marginTop: 16 }}>
+              Not seeing it? Check your spam folder, or{" "}
+              <button
+                className="link-btn"
+                onClick={() => { setLinkSent(false); setError(null); }}
+              >
+                try a different email address
+              </button>.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (passwordSignupSuccess) {
     return (
       <div className="login-page">
         <div className="login-card">
@@ -53,14 +121,66 @@ export default function LoginPage() {
     );
   }
 
+  // ── Magic-link (default) form ─────────────────────────────────────────
+  if (mode === "magic") {
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <div className="login-logo"><img src={logoSvg} alt="PlaceCard" className="login-logo-img" /></div>
+          <h2 className="login-title">
+            {isSignupUrl ? "Create your account" : "Sign in to PlaceCard"}
+          </h2>
+          <p style={{ fontSize: 14, color: "#64748b", margin: "0 0 20px", textAlign: "center" }}>
+            No password needed — we'll email you a one-tap login link.
+          </p>
+
+          <form onSubmit={handleMagicLink} className="login-form">
+            <div className="form-group">
+              <label>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="you@company.com"
+                required
+                autoFocus
+              />
+            </div>
+
+            {error && <div className="login-error">{error}</div>}
+
+            <button type="submit" className="btn btn-primary login-btn" disabled={loading || !email}>
+              {loading ? "Sending link…" : "Send login link"}
+            </button>
+          </form>
+
+          <div className="login-switch">
+            <p style={{ fontSize: 13, color: "#94a3b8" }}>
+              Prefer a password?{" "}
+              <button
+                className="link-btn"
+                onClick={() => { setMode("password"); setError(null); }}
+              >
+                Sign in with password
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Password fallback ─────────────────────────────────────────────────
   return (
     <div className="login-page">
       <div className="login-card">
         <div className="login-logo"><img src={logoSvg} alt="PlaceCard" className="login-logo-img" /></div>
-        <h2 className="login-title">{mode === "login" ? "Sign in" : "Create account"}</h2>
+        <h2 className="login-title">
+          {passwordMode === "login" ? "Sign in with password" : "Create account"}
+        </h2>
 
-        <form onSubmit={handleSubmit} className="login-form">
-          {mode === "signup" && (
+        <form onSubmit={handlePasswordSubmit} className="login-form">
+          {passwordMode === "signup" && (
             <div className="form-group">
               <label>Full name</label>
               <input
@@ -111,16 +231,21 @@ export default function LoginPage() {
           {error && <div className="login-error">{error}</div>}
 
           <button type="submit" className="btn btn-primary login-btn" disabled={loading}>
-            {loading ? "Loading..." : mode === "login" ? "Sign In" : "Create Account"}
+            {loading ? "Loading..." : passwordMode === "login" ? "Sign In" : "Create Account"}
           </button>
         </form>
 
         <div className="login-switch">
-          {mode === "login" ? (
-            <p>Don't have an account? <button className="link-btn" onClick={() => { setMode("signup"); setError(null); }}>Sign up</button></p>
+          {passwordMode === "login" ? (
+            <p>Don't have an account? <button className="link-btn" onClick={() => { setPasswordMode("signup"); setError(null); }}>Sign up</button></p>
           ) : (
-            <p>Already have an account? <button className="link-btn" onClick={() => { setMode("login"); setError(null); }}>Sign in</button></p>
+            <p>Already have an account? <button className="link-btn" onClick={() => { setPasswordMode("login"); setError(null); }}>Sign in</button></p>
           )}
+          <p style={{ fontSize: 13, color: "#94a3b8", marginTop: 12 }}>
+            <button className="link-btn" onClick={() => { setMode("magic"); setError(null); }}>
+              ← Back to magic-link login
+            </button>
+          </p>
         </div>
       </div>
     </div>
